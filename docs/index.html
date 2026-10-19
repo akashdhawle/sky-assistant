@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Expenses</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Expenses">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #16181d; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #4f46e5; --good: #059669; --bad: #dc2626; --warn: #d97706;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1115; --card: #181b22; --text: #eef0f4; --muted: #9aa1ad;
+            --line: #2a2f3a; --accent: #818cf8; --good: #34d399; --bad: #f87171; --warn: #fbbf24; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         padding: env(safe-area-inset-top) 16px 96px; max-width: 760px; margin: 0 auto; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 16px 0 8px; }
+  header h1 { font-size: 20px; margin: 0; }
+  .month { display: flex; align-items: center; gap: 8px; }
+  button { font: inherit; cursor: pointer; }
+  .month button { border: 1px solid var(--line); background: var(--card); color: var(--text);
+                  width: 34px; height: 34px; border-radius: 10px; font-size: 16px; }
+  .month span { min-width: 92px; text-align: center; font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+          padding: 16px; margin-top: 12px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
+             color: var(--muted); margin: 0 0 10px; font-weight: 600;
+             display: flex; justify-content: space-between; align-items: center; }
+  .link { background: none; border: 0; color: var(--accent); font-size: 13px; font-weight: 600;
+          text-transform: none; letter-spacing: 0; padding: 0; }
+  .total { font-size: 34px; font-weight: 700; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .up { color: var(--bad); } .down { color: var(--good); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .stats div { background: var(--bg); border-radius: 10px; padding: 8px; }
+  .stats b { display: block; font-size: 15px; }
+  .stats small { color: var(--muted); font-size: 12px; }
+  .pos { color: var(--good); } .neg { color: var(--bad); }
+  .chart { position: relative; height: 220px; }
+  .budget { margin: 10px 0 14px; }
+  .budget .row1 { display: flex; justify-content: space-between; font-size: 14px; }
+  .budget .row1 span:last-child { color: var(--muted); }
+  .bar { height: 8px; border-radius: 4px; background: var(--bg); margin-top: 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+  .bar i.warn { background: var(--warn); } .bar i.over { background: var(--bad); }
+  .edit-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; }
+  input, select, textarea { font: inherit; color: var(--text); background: var(--bg);
+           border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  .edit-row input { width: 120px; text-align: right; }
+  .rows { list-style: none; margin: 0; padding: 0; }
+  .rows li { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+             padding: 10px 0; border-top: 1px solid var(--line); }
+  .rows li:first-child { border-top: 0; }
+  .rows .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rows .meta { color: var(--muted); font-size: 12px; }
+  .rows .left { min-width: 0; flex: 1; }
+  .rows .amt { font-weight: 600; white-space: nowrap; }
+  .rows select { font-size: 12px; padding: 2px 4px; margin-top: 4px; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 0; }
+  .primary { background: var(--accent); color: #fff; border: 0; border-radius: 10px; padding: 10px 16px; font-weight: 600; }
+  .ghost { background: none; border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 10px 16px; }
+  #msg { color: var(--muted); text-align: center; padding: 40px 0; }
+  #fab { position: fixed; right: 20px; bottom: calc(20px + env(safe-area-inset-bottom));
+         width: 56px; height: 56px; border-radius: 28px; border: 0; background: var(--accent);
+         color: #fff; font-size: 30px; line-height: 56px; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  #sheet { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: flex-end; justify-content: center; }
+  #sheet[hidden] { display: none; }
+  .panel { background: var(--card); width: 100%; max-width: 560px; border-radius: 18px 18px 0 0;
+           padding: 16px 16px calc(20px + env(safe-area-inset-bottom)); }
+  .tabs { display: flex; gap: 6px; background: var(--bg); padding: 4px; border-radius: 10px; margin-bottom: 12px; }
+  .tabs button { flex: 1; border: 0; background: none; color: var(--muted); padding: 8px; border-radius: 8px; font-weight: 600; }
+  .tabs button.on { background: var(--card); color: var(--text); }
+  .field { display: block; margin-bottom: 10px; font-size: 13px; color: var(--muted); }
+  .field input, .field select, .field textarea { display: block; width: 100%; margin-top: 4px; font-size: 16px; }
+  textarea { min-height: 110px; resize: vertical; }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+  .note { font-size: 13px; margin-top: 8px; min-height: 18px; }
+  #connect { padding: 24px 0; }
+  #connect[hidden] { display: none; }
+  #connect p { color: var(--muted); }
+  #disconnect { display: block; margin: 24px auto 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Expenses</h1>
+  <div class="month">
+    <button id="prev" aria-label="Previous month">‹</button>
+    <span id="monthLabel"></span>
+    <button id="next" aria-label="Next month">›</button>
+  </div>
+</header>
+
+<div id="connect" hidden>
+  <div class="card">
+    <h2>Connect your sheet</h2>
+    <p>You only do this once on this phone. Paste your <b>receive link</b> (the same link that's in your Log Bank SMS shortcut) and the <b>View key</b> from the Setup tab of your Sky Expenses sheet.</p>
+    <label class="field">App link (the receive link ending in /exec)
+      <input id="cLink" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <label class="field">View key
+      <input id="cKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    <div class="note" id="cNote"></div>
+    <div class="actions"><button class="primary" id="cGo">Connect</button></div>
+  </div>
+</div>
+
+<div id="msg">Loading…</div>
+
+<div id="app" hidden>
+  <div class="card">
+    <h2>Spent this month</h2>
+    <div class="total" id="total"></div>
+    <div class="sub" id="compare"></div>
+    <div class="stats">
+      <div><small>Received</small><b id="received"></b></div>
+      <div><small>Saved</small><b id="saved"></b></div>
+      <div><small>Per day</small><b id="perDay"></b></div>
+    </div>
+    <div class="sub" id="banks" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Budgets <button class="link" id="editBudgets">Edit</button></h2>
+    <div id="budgets"></div>
+  </div>
+
+  <div class="card"><h2>By category</h2><div class="chart"><canvas id="catChart"></canvas></div></div>
+  <div class="card"><h2>Day by day</h2><div class="chart"><canvas id="dayChart"></canvas></div></div>
+  <div class="card"><h2>Last 6 months</h2><div class="chart"><canvas id="trendChart"></canvas></div></div>
+  <div class="card"><h2>Top places</h2><ul class="rows" id="top"></ul></div>
+  <div class="card"><h2>Transactions</h2><ul class="rows" id="list"></ul></div>
+  <button class="ghost" id="disconnect" onclick="disconnect()">Disconnect this phone</button>
+</div>
+
+<button id="fab" aria-label="Add a transaction" hidden>+</button>
+
+<div id="sheet" hidden>
+  <div class="panel">
+    <div class="tabs">
+      <button data-tab="sms" class="on">Paste bank SMS</button>
+      <button data-tab="manual">Add manually</button>
+    </div>
+    <div id="tab-sms">
+      <label class="field">Copy a missed SBI or ICICI message from Messages and paste it here
+        <textarea id="smsText" placeholder="Dear UPI user A/C X1234 debited by…"></textarea>
+      </label>
+    </div>
+    <div id="tab-manual" hidden>
+      <div class="tabs" id="typeTabs">
+        <button data-type="Debit" class="on">Spent</button>
+        <button data-type="Credit">Received</button>
+      </div>
+      <label class="field">Amount (₹)<input id="mAmount" type="number" inputmode="decimal" min="0" step="0.01"></label>
+      <label class="field">What / where<input id="mMerchant" type="text" placeholder="e.g. Vegetables, Auto"></label>
+      <label class="field">Category<select id="mCategory"></select></label>
+      <label class="field">Date<input id="mDate" type="date"></label>
+    </div>
+    <div class="note" id="addNote"></div>
+    <div class="actions">
+      <button class="ghost" id="cancelAdd">Close</button>
+      <button class="primary" id="saveAdd">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLORS = ['#4f46e5','#0891b2','#059669','#d97706','#dc2626','#db2777',
+                '#7c3aed','#65a30d','#0284c7','#9ca3af','#78716c'];
+const inr = n => (n < 0 ? '-₹' : '₹') + Math.round(Math.abs(n)).toLocaleString('en-IN');
+const monthName = d => d.toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const $ = id => document.getElementById(id);
+
+let all = [], categories = [], incomeCategories = [], budgets = {}, charts = {};
+let cursor = new Date(); cursor = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+let editing = false, addTab = 'sms', addType = 'Debit';
+
+/* BEGIN api */
+// Talks to your own Google Apps Script with the view key saved on this device.
+const store = {
+  get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
+  del: k => { try { localStorage.removeItem(k); } catch (e) {} },
+};
+const ACTIONS = {
+  getData: () => ({ action: 'data' }),
+  setBudgets: budgets => ({ action: 'setBudgets', budgets }),
+  setCategory: (row, category) => ({ action: 'setCategory', row, category }),
+  addFromSms: text => ({ action: 'addSms', text }),
+  addManual: entry => ({ action: 'addManual', entry }),
+};
+function call(link, viewKey, body) {
+  return fetch(link, {
+    method: 'POST', redirect: 'follow',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },  // avoids a CORS preflight
+    body: JSON.stringify(Object.assign({ viewKey }, body)),
+  }).then(r => r.json()).then(r => {
+    if (!r.ok) throw new Error(r.error || 'Request failed');
+    return r.result;
+  });
+}
+const api = (fn, ...args) => {
+  const link = store.get('link'), key = store.get('viewKey');
+  const p = call(link, key, ACTIONS[fn](...args));
+  if (fn !== 'getData') return p;
+  return p.then(d => { store.set('cache', JSON.stringify(d)); return d; })
+    .catch(err => {
+      const cached = store.get('cache');
+      if (!cached) throw err;
+      setTimeout(() => { $('compare').textContent = 'Offline: showing your last saved data'; }, 0);
+      return JSON.parse(cached);
+    });
+};
+
+function showConnect() {
+  document.querySelector('.month').style.visibility = 'hidden';
+  $('msg').hidden = true; $('app').hidden = true; $('fab').hidden = true; $('connect').hidden = false;
+  const h = new URLSearchParams(location.hash.slice(1));
+  $('cLink').value = h.get('link') || store.get('link') || '';
+  $('cKey').value = h.get('key') || '';
+}
+$('cGo').onclick = () => {
+  const link = $('cLink').value.trim(), key = $('cKey').value.trim();
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(link)) {
+    $('cNote').className = 'note neg'; $('cNote').textContent = 'The link should start with https://script.google.com/macros/s/ and end with /exec';
+    return;
+  }
+  $('cNote').className = 'note'; $('cNote').textContent = 'Connecting…';
+  call(link, key, { action: 'data' }).then(d => {
+    store.set('link', link); store.set('viewKey', key); store.set('cache', JSON.stringify(d));
+    history.replaceState(null, '', location.pathname);
+    $('connect').hidden = true; $('msg').hidden = false;
+    document.querySelector('.month').style.visibility = ''; load();
+  }).catch(e => { $('cNote').className = 'note neg'; $('cNote').textContent = 'Could not connect: ' + e.message; });
+};
+function disconnect() {
+  if (!confirm('Disconnect this phone from your sheet? Your data stays in your sheet.')) return;
+  ['link', 'viewKey', 'cache'].forEach(store.del);
+  showConnect();
+}
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+/* END api */
+
+function load() {
+  return api('getData')
+    .then(d => {
+      all = d.tx.map(t => Object.assign(t, { d: new Date(t.date) }));
+      categories = d.categories; incomeCategories = d.incomeCategories; budgets = d.budgets || {};
+      $('msg').hidden = true; $('app').hidden = false; $('fab').hidden = false;
+      render();
+    })
+    .catch(e => { $('msg').hidden = false; $('msg').textContent = 'Could not load: ' + e.message; });
+}
+
+const inMonth = (t, y, m) => t.d.getFullYear() === y && t.d.getMonth() === m;
+const sum = list => list.reduce((a, t) => a + t.amount, 0);
+const isRefund = t => t.type === 'Credit' && t.category === 'Refund';
+const debits = list => list.filter(t => t.type !== 'Credit');
+const income = list => list.filter(t => t.type === 'Credit' && t.category !== 'Refund');
+const netSpent = list => sum(debits(list)) - sum(list.filter(isRefund));
+
+function render() {
+  const y = cursor.getFullYear(), m = cursor.getMonth();
+  $('monthLabel').textContent = monthName(cursor);
+  const month = all.filter(t => inMonth(t, y, m));
+  const prev = all.filter(t => inMonth(t, m === 0 ? y - 1 : y, (m + 11) % 12));
+  const spent = netSpent(month), prevSpent = netSpent(prev), received = sum(income(month));
+
+  $('total').textContent = inr(spent);
+  if (prevSpent > 0) {
+    const pct = Math.round((spent - prevSpent) / prevSpent * 100);
+    $('compare').innerHTML = `<span class="${pct > 0 ? 'up' : 'down'}">${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}%</span> vs last month (${inr(prevSpent)})`;
+  } else $('compare').textContent = debits(month).length + ' payments';
+  $('received').textContent = inr(received);
+  const saved = received - spent;
+  $('saved').innerHTML = `<span class="${saved >= 0 ? 'pos' : 'neg'}">${inr(saved)}</span>`;
+  const now = new Date();
+  const days = (y === now.getFullYear() && m === now.getMonth()) ? now.getDate() : new Date(y, m + 1, 0).getDate();
+  $('perDay').textContent = inr(spent / days);
+  const bankSpend = b => sum(debits(month).filter(t => t.bank === b)) - sum(month.filter(t => isRefund(t) && t.bank === b));
+  $('banks').textContent = `SBI ${inr(bankSpend('SBI'))} · ICICI ${inr(bankSpend('ICICI'))}` +
+    (bankSpend('Cash') ? ` · Cash ${inr(bankSpend('Cash'))}` : '');
+
+  // spending per category, with refunds netted out
+  const byCat = {};
+  debits(month).forEach(t => byCat[t.category] = (byCat[t.category] || 0) + t.amount);
+  month.filter(isRefund).forEach(t => {
+    const match = debits(month).find(d => d.merchant === t.merchant);
+    const c = match ? match.category : 'Shopping';
+    byCat[c] = (byCat[c] || 0) - t.amount;
+  });
+
+  renderBudgets(byCat);
+
+  const cats = Object.keys(byCat).filter(c => byCat[c] > 0).sort((a, b) => byCat[b] - byCat[a]);
+  draw('catChart', {
+    type: 'doughnut',
+    data: { labels: cats.map(c => `${c} ${inr(byCat[c])}`),
+            datasets: [{ data: cats.map(c => byCat[c]),
+                         backgroundColor: cats.map(c => COLORS[Math.max(0, categories.indexOf(c)) % COLORS.length]),
+                         borderColor: css('--card'), borderWidth: 2 }] },
+    options: { cutout: '62%', plugins: { legend: { position: 'right', labels: { color: css('--text'), boxWidth: 10, font: { size: 12 } } },
+               tooltip: { callbacks: { label: c => ' ' + c.label } } } }
+  });
+
+  const nDays = new Date(y, m + 1, 0).getDate();
+  const perDay = Array(nDays).fill(0);
+  debits(month).forEach(t => perDay[t.d.getDate() - 1] += t.amount);
+  draw('dayChart', {
+    type: 'bar',
+    data: { labels: perDay.map((_, i) => i + 1),
+            datasets: [{ data: perDay, backgroundColor: css('--accent'), borderRadius: 3 }] },
+    options: axes({ x: { ticks: { maxTicksLimit: 8 } } })
+  });
+
+  const labels = [], spentVals = [], recVals = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(y, m - i, 1);
+    const list = all.filter(t => inMonth(t, d.getFullYear(), d.getMonth()));
+    labels.push(d.toLocaleString('en-IN', { month: 'short' }));
+    spentVals.push(netSpent(list)); recVals.push(sum(income(list)));
+  }
+  draw('trendChart', {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label: 'Spent', data: spentVals, backgroundColor: css('--accent'), borderRadius: 6 },
+      { label: 'Received', data: recVals, backgroundColor: css('--good'), borderRadius: 6 } ] },
+    options: axes({ legend: true })
+  });
+
+  const byM = {};
+  debits(month).forEach(t => byM[t.merchant] = (byM[t.merchant] || 0) + t.amount);
+  const top = Object.keys(byM).sort((a, b) => byM[b] - byM[a]).slice(0, 5);
+  $('top').innerHTML = top.length ? top.map(k =>
+    `<li><div class="left"><div class="name">${esc(k)}</div></div><div class="amt">${inr(byM[k])}</div></li>`).join('')
+    : '<li class="empty">Nothing yet this month</li>';
+
+  const list = month.slice().sort((a, b) => b.d - a.d);
+  $('list').innerHTML = list.length ? list.map(t => {
+    const credit = t.type === 'Credit';
+    const opts = credit ? incomeCategories : categories;
+    return `<li><div class="left">
+      <div class="name">${esc(t.merchant)}</div>
+      <div class="meta">${t.d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · ${esc(t.bank)} ${t.account ? '··' + esc(t.account) : ''} · ${esc(t.mode)}</div>
+      <select data-row="${t.row}">${opts.map(c => `<option${c === t.category ? ' selected' : ''}>${c}</option>`).join('')}</select>
+    </div><div class="amt ${credit ? 'pos' : ''}">${credit ? '+' : ''}${inr(t.amount)}</div></li>`;
+  }).join('') : '<li class="empty">No transactions this month</li>';
+}
+
+function renderBudgets(byCat) {
+  $('editBudgets').textContent = editing ? 'Save' : 'Edit';
+  if (editing) {
+    $('budgets').innerHTML = categories.map(c => `
+      <div class="edit-row"><span>${c}</span>
+        <input type="number" inputmode="numeric" min="0" step="100" data-cat="${c}" value="${budgets[c] || ''}" placeholder="No limit"></div>`).join('') +
+      '<div class="sub">Leave blank for no limit. You get a phone alert at 80% and 100%.</div>';
+    return;
+  }
+  const set = categories.filter(c => budgets[c] > 0);
+  if (!set.length) {
+    $('budgets').innerHTML = '<div class="empty">No budgets yet. Tap Edit to set a monthly limit per category.</div>';
+    return;
+  }
+  $('budgets').innerHTML = set.map(c => {
+    const spent = Math.max(0, byCat[c] || 0), limit = budgets[c];
+    const pct = spent / limit * 100;
+    const cls = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : '';
+    const left = limit - spent;
+    return `<div class="budget"><div class="row1"><span>${c}</span>
+      <span>${inr(spent)} of ${inr(limit)} · ${left >= 0 ? inr(left) + ' left' : '<span class="neg">' + inr(-left) + ' over</span>'}</span></div>
+      <div class="bar"><i class="${cls}" style="width:${Math.min(100, pct)}%"></i></div></div>`;
+  }).join('');
+}
+
+$('editBudgets').onclick = () => {
+  if (!editing) { editing = true; render(); return; }
+  const next = {};
+  document.querySelectorAll('#budgets input').forEach(i => { if (Number(i.value) > 0) next[i.dataset.cat] = Number(i.value); });
+  budgets = next; editing = false; render();
+  api('setBudgets', next).catch(err => alert('Could not save budgets: ' + err.message));
+};
+
+function axes(extra) {
+  const grid = { color: css('--line') }, ticks = { color: css('--muted') };
+  return { plugins: { legend: { display: !!extra.legend, labels: { color: css('--text'), boxWidth: 10 } },
+                      tooltip: { callbacks: { label: c => ' ' + inr(c.raw) } } },
+           scales: { x: Object.assign({ grid: { display: false }, ticks }, extra.x || {}),
+                     y: { grid, beginAtZero: true, suggestedMax: 500,
+                          ticks: Object.assign({}, ticks, { precision: 0, callback: v => inr(v) }) } } };
+}
+
+function draw(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  cfg.options = Object.assign({ responsive: true, maintainAspectRatio: false }, cfg.options);
+  charts[id] = new Chart($(id), cfg);
+}
+
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+$('list').addEventListener('change', e => {
+  if (e.target.tagName !== 'SELECT') return;
+  const row = Number(e.target.dataset.row), cat = e.target.value;
+  all.find(x => x.row === row).category = cat;
+  render();
+  api('setCategory', row, cat).catch(err => alert('Could not save: ' + err.message));
+});
+$('prev').onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1); render(); };
+$('next').onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1); render(); };
+
+// ----- add a missed or cash transaction -----
+function fillCategories() {
+  const list = addType === 'Credit' ? incomeCategories : categories;
+  $('mCategory').innerHTML = list.map(c => `<option>${c}</option>`).join('');
+  $('mCategory').value = addType === 'Credit' ? 'Received' : 'Other';
+}
+function setTab(tab) {
+  addTab = tab;
+  document.querySelectorAll('.panel > .tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  $('tab-sms').hidden = tab !== 'sms'; $('tab-manual').hidden = tab !== 'manual';
+  $('addNote').textContent = '';
+}
+$('fab').onclick = () => {
+  $('sheet').hidden = false; $('smsText').value = ''; $('mAmount').value = ''; $('mMerchant').value = '';
+  $('mDate').value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  fillCategories(); setTab('sms');
+};
+$('cancelAdd').onclick = () => { $('sheet').hidden = true; };
+$('sheet').onclick = e => { if (e.target.id === 'sheet') $('sheet').hidden = true; };
+document.querySelectorAll('.panel > .tabs button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
+document.querySelectorAll('#typeTabs button').forEach(b => b.onclick = () => {
+  addType = b.dataset.type;
+  document.querySelectorAll('#typeTabs button').forEach(x => x.classList.toggle('on', x === b));
+  fillCategories();
+});
+$('saveAdd').onclick = () => {
+  const note = $('addNote'); note.className = 'note'; note.textContent = 'Saving…';
+  const done = r => {
+    note.className = 'note ' + (r.saved ? 'pos' : 'neg');
+    note.textContent = r.saved ? 'Saved: ' + r.notify : (r.notify || 'Not saved');
+    if (r.saved) { load(); setTimeout(() => { $('sheet').hidden = true; }, 900); }
+  };
+  const fail = e => { note.className = 'note neg'; note.textContent = e.message; };
+  if (addTab === 'sms') {
+    api('addFromSms', $('smsText').value).then(done, fail);
+  } else {
+    api('addManual', {
+      type: addType, amount: $('mAmount').value, merchant: $('mMerchant').value,
+      category: $('mCategory').value, date: $('mDate').value, bank: 'Cash' }).then(done, fail);
+  }
+};
+
+if (store.get('link') && store.get('viewKey')) load(); else showConnect();
+</script>
+</body>
+</html>
