@@ -17,6 +17,7 @@
 const SHEET_TX = 'Transactions';
 const SHEET_RULES = 'Rules';
 const SHEET_BUDGETS = 'Budgets';
+const SHEET_EMIS = 'EMIs';
 const HEADERS = ['Date', 'Bank', 'Amount', 'Merchant', 'Category', 'Account', 'Mode', 'Id', 'Type'];
 
 const DEFAULT_RULES = [
@@ -41,7 +42,7 @@ const DEFAULT_RULES = [
 ];
 
 const CATEGORIES = ['Food', 'Groceries', 'Shopping', 'Transport', 'Fuel', 'Bills',
-  'Entertainment', 'Health', 'Cash', 'Transfers', 'Other'];
+  'Entertainment', 'Health', 'Cash', 'EMI', 'Transfers', 'Other'];
 const INCOME_CATEGORIES = ['Salary', 'Refund', 'Interest', 'Cashback', 'Received'];
 
 // [name, any mention, a sure sign it's the sender ("HDFC Bank", "SBI Card", "-SBI" at the end)]
@@ -90,6 +91,12 @@ function setup() {
     budgets.appendRow(['Category', 'Monthly limit (₹, blank = none)']);
     budgets.getRange(2, 1, CATEGORIES.length, 1).setValues(CATEGORIES.map(c => [c]));
     budgets.setFrozenRows(1);
+  }
+
+  if (!ss.getSheetByName(SHEET_EMIS)) {
+    const emis = ss.insertSheet(SHEET_EMIS);
+    emis.appendRow(['EMI name', 'Amount (₹)', 'Day of month', 'Match word (optional, from the bank message)']);
+    emis.setFrozenRows(1);
   }
 
   let key = props.getProperty('SECRET_KEY');
@@ -196,11 +203,15 @@ function parseSms(text) {
 
   let mode = 'Other';
   if (/withdrawn|\batm\b/.test(lower)) mode = 'ATM';
+  else if (/\bn?ach\b|\becs\b|standing instruction/.test(lower)) mode = 'Auto debit';
   else if (/upi|vpa/.test(lower)) mode = 'UPI';
   else if (/card/.test(lower)) mode = 'Card';
   else if (/neft|imps|rtgs/.test(lower)) mode = 'Bank transfer';
 
   const debitPatterns = [
+    /\b(?:n?ach|ecs)(?:\s*dr?)?[\s:-]+([A-Za-z][A-Za-z .&']*?)(?:\s*-|\s*\d|\.|$)/i, // "ACH D- BAJAJ FINANCE LTD-123"
+    /[&;]\s*(loan a\/c\s*[x*]*\d+) credited/i,                         // ICICI loan
+    /towards (?:your )?(?:emi (?:of|for) )?([A-Za-z][A-Za-z0-9 .&'\/\-]+?)(?:\.|$| on \d)/i,
     /upi\/p2[am]\/\d+\/([A-Za-z0-9 .&'@\-_]+?)(?: not you|\/|\.|$)/i,     // Axis UPI
     /(?:trf|transfer(?:red)?) to (.+?)(?: refno| ref no| ref\b|\.|$)/i,  // SBI UPI
     /[&;]\s*((?:a\/c|acct|acc)\s*[x*]*\d+) credited/i,               // ICICI transfer to another account
@@ -232,6 +243,7 @@ function parseSms(text) {
   merchant = merchant.replace(/\s+(by|via) upi\b.*$/i, '').replace(/\s+/g, ' ').slice(0, 60) || 'Unknown';
 
   const tx = { type: type, bank: bank, amount: amount, merchant: merchant, account: account, mode: mode };
+  if (type === 'Debit' && /\bemi\b|\bloan\b|\bn?ach\b|\becs\b/.test(lower)) tx.emi = true;
   if (type === 'Credit') {
     if (isRefund) tx.category = 'Refund';
     else if (/salary|\bsal\b/.test(lower)) tx.category = 'Salary';
@@ -268,7 +280,7 @@ function saveTx_(tx, id) {
         return { ok: true, saved: false, reason: 'duplicate', notify: 'Already saved' };
       }
     }
-    if (!tx.category) tx.category = categorize_(tx.merchant, tx.mode, getRules_());
+    if (!tx.category) tx.category = categorize_(tx.merchant, tx.mode, getRules_(), tx.emi);
     const date = tx.date || new Date();
     sheet.appendRow([date, tx.bank || '', tx.amount, tx.merchant, tx.category,
       tx.account || '', tx.mode || '', id || ('manual-' + Utilities.getUuid().slice(0, 8)), tx.type]);
@@ -285,6 +297,15 @@ function notifyText_(tx, date) {
       ' · ' + tx.merchant + ' (' + tx.category + ')';
   }
   let line = inr_(tx.amount) + ' · ' + tx.merchant + ' (' + tx.category + ')';
+  if (tx.category === 'EMI') {
+    const tz = Session.getScriptTimeZone(), mk = Utilities.formatDate(date, tz, 'yyyyMM');
+    const paid = matchEmis_(getEmis_(), getData_().tx.filter(t =>
+      t.type === 'Debit' && Utilities.formatDate(new Date(t.date), tz, 'yyyyMM') === mk));
+    const mine = paid.find(e => e.paid && Math.abs(e.paid.amount - tx.amount) < 0.01 && e.paid.merchant === tx.merchant);
+    const left = paid.filter(e => !e.paid).length;
+    return '✓ ' + (mine ? mine.name + ' EMI paid ' : 'EMI paid ') + inr_(tx.amount) + ' · ' + tx.merchant +
+      (paid.length ? ' · ' + (left ? left + ' more EMI' + (left > 1 ? 's' : '') + ' due this month' : 'all EMIs paid this month') : '');
+  }
   const limit = getBudgets_()[tx.category];
   if (!limit) return line;
   const spent = monthSpend_(tx.category, date);
@@ -312,13 +333,14 @@ function monthSpend_(category, date) {
   }, 0);
 }
 
-function categorize_(merchant, mode, rules) {
+function categorize_(merchant, mode, rules, emi) {
   const m = String(merchant).toLowerCase();
   for (const r of rules) {
     if (!r[0]) continue;
     const kw = r[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (new RegExp('(^|[^a-z0-9])' + kw).test(m)) return r[1];
   }
+  if (emi) return 'EMI';
   if (mode === 'ATM') return 'Cash';
   if (mode === 'UPI' && /@/.test(m)) return 'Transfers';
   if (mode === 'Bank transfer') return 'Transfers';
@@ -356,6 +378,7 @@ function appRequest_(body) {
       case 'setBudgets': return { ok: true, result: setBudgets_(body.budgets || {}) };
       case 'addSms': return { ok: true, result: addFromSms_(body.text) };
       case 'addManual': return { ok: true, result: addManual_(body.entry || {}) };
+      case 'setEmis': return { ok: true, result: setEmis_(body.emis) };
       case 'summary': {
         const text = summary_(body.period === 'week' ? 'week' : 'day', new Date());
         return { ok: true, result: text, notify: text };
@@ -365,6 +388,73 @@ function appRequest_(body) {
   } catch (err) {
     return { ok: false, error: err.message };
   }
+}
+
+// ---------- EMIs you expect every month ----------
+
+function getEmis_() {
+  const sheet = ss_().getSheetByName(SHEET_EMIS);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getValues()
+    .map(r => ({ name: String(r[0]).trim(), amount: Number(r[1]) || 0,
+                 day: Math.min(31, Math.max(1, Math.round(Number(r[2]) || 1))), match: String(r[3] || '').trim() }))
+    .filter(e => e.name && e.amount > 0);
+}
+
+/** Called from the dashboard. list: [{name, amount, day, match}]. */
+function setEmis(list) {
+  if (!isOwner_()) throw new Error('Not allowed');
+  return setEmis_(list);
+}
+
+function setEmis_(list) {
+  const ss = ss_();
+  let sheet = ss.getSheetByName(SHEET_EMIS);
+  if (!sheet) { setup(); sheet = ss.getSheetByName(SHEET_EMIS); }
+  const rows = (Array.isArray(list) ? list : []).slice(0, 30)
+    .map(e => [String(e.name || '').trim().slice(0, 40), Number(e.amount) || 0,
+               Math.min(31, Math.max(1, Math.round(Number(e.day) || 1))), String(e.match || '').trim().slice(0, 40)])
+    .filter(r => r[0] && r[1] > 0);
+  if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).clearContent();
+  if (rows.length) sheet.getRange(2, 1, rows.length, 4).setValues(rows);
+  return getEmis_();
+}
+
+/**
+ * Pairs each expected EMI with an EMI payment from that month: by its match word when it has one,
+ * otherwise by an amount within 2%. Each payment is used once. Keep in step with matchEmis in Dashboard.html.
+ */
+function matchEmis_(emis, monthDebits) {
+  const used = [];
+  return emis.map(e => {
+    const kw = e.match.toLowerCase();
+    const hit = monthDebits.find(t => used.indexOf(t) === -1 && t.category === 'EMI' &&
+      (kw ? String(t.merchant).toLowerCase().indexOf(kw) !== -1 : Math.abs(t.amount - e.amount) <= Math.max(1, e.amount * 0.02)));
+    if (hit) used.push(hit);
+    return Object.assign({}, e, { paid: hit || null });
+  });
+}
+
+/** Reminders for the daily summary: EMIs due tomorrow, and this month's that haven't shown up. */
+function emiReminders_(now, tx) {
+  const emis = getEmis_();
+  if (!emis.length) return [];
+  const tz = Session.getScriptTimeZone();
+  const fmt = (d, f) => Utilities.formatDate(d, tz, f);
+  const daysIn = d => { const y = +fmt(d, 'yyyy'), m = +fmt(d, 'M'); return new Date(y, m, 0).getDate(); };
+  const statusFor = d => matchEmis_(emis, tx.filter(t => t.type === 'Debit' && fmt(t.d, 'yyyyMM') === fmt(d, 'yyyyMM')));
+  const out = [];
+  const tomorrow = new Date(now.getTime() + 86400000), tDay = +fmt(tomorrow, 'd');
+  statusFor(tomorrow).filter(e => !e.paid && Math.min(e.day, daysIn(tomorrow)) === tDay)
+    .forEach(e => out.push('⏰ EMI due tomorrow: ' + e.name + ' ' + inr_(e.amount)));
+  const today = +fmt(now, 'd');
+  statusFor(now).filter(e => !e.paid && Math.min(e.day, daysIn(now)) < today)
+    .forEach(e => out.push('⚠️ ' + e.name + ' EMI (due ' + e.day + ordinal_(e.day) + ') not seen yet'));
+  return out;
+}
+
+function ordinal_(n) {
+  return (n % 100 >= 11 && n % 100 <= 13) ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th');
 }
 
 // ---------- daily and weekly summary (for a Shortcuts time automation) ----------
@@ -381,15 +471,16 @@ function summary_(period, now) {
     return false;
   };
   const tx = getData_().tx.map(t => Object.assign(t, { d: new Date(t.date) }));
-  const spend = list => list.reduce((s, t) => s + (t.type === 'Debit' ? t.amount : t.category === 'Refund' ? -t.amount : 0), 0);
+  const isSpend = t => t.type === 'Debit' && t.category !== 'EMI';
+  const spend = list => list.reduce((s, t) => s + (isSpend(t) ? t.amount : t.category === 'Refund' ? -t.amount : 0), 0);
   const current = tx.filter(t => inDays(t.d, 0, days));
   const earlier = tx.filter(t => inDays(t.d, days, days));
   const month = tx.filter(t => monthKey(t.d) === monthKey(now));
   const spent = spend(current), before = spend(earlier);
-  const payments = current.filter(t => t.type === 'Debit').length;
+  const payments = current.filter(isSpend).length;
 
   const byCat = {};
-  current.filter(t => t.type === 'Debit').forEach(t => byCat[t.category] = (byCat[t.category] || 0) + t.amount);
+  current.filter(isSpend).forEach(t => byCat[t.category] = (byCat[t.category] || 0) + t.amount);
   const top = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]).slice(0, 3)
     .map(c => c + ' ' + inr_(byCat[c])).join(', ');
 
@@ -412,7 +503,10 @@ function summary_(period, now) {
   }).filter(w => w.pct >= 80).sort((a, b) => b.pct - a.pct)
     .map(w => w.c + ' ' + w.pct + '%');
   if (warnings.length) line += '. ⚠️ Budget: ' + warnings.join(', ');
-  return line + '.';
+  const emiPaid = current.filter(t => t.type === 'Debit' && t.category === 'EMI').reduce((s, t) => s + t.amount, 0);
+  if (emiPaid > 0) line += '. EMI paid ' + inr_(emiPaid);
+  const reminders = period === 'day' ? emiReminders_(now, tx) : [];
+  return line + '.' + (reminders.length ? '\n' + reminders.join('\n') : '');
 }
 
 // ---------- dashboard ----------
@@ -441,6 +535,7 @@ function getData_() {
     categories: CATEGORIES,
     incomeCategories: INCOME_CATEGORIES,
     budgets: getBudgets_(),
+    emis: getEmis_(),
     tx: rows.map((r, i) => ({
       row: i + 2,
       date: r[0] instanceof Date ? r[0].toISOString() : String(r[0]),

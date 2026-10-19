@@ -166,3 +166,22 @@ The file only ever holds messages that haven't reached your sheet yet. Sending t
 Each night you get something like `Today: ₹1,549 on 2 payments (Shopping ₹1,299, Food ₹250). October so far ₹18,200. ⚠️ Budget: Food 83%.`
 
 For a weekly one, duplicate the shortcut as **Weekly Summary**, change `period` to `week`, and add a **Time of Day** automation set to **Weekly**, Sunday evening.
+
+---
+
+## Update 5: EMIs (about 5 minutes)
+
+### On your computer
+1. In Apps Script, clear `Code.gs` (**Ctrl+A**, Delete), paste the new one once, and press **Ctrl+S**. Do the same for `Dashboard`.
+2. Run `setup`. It adds an **EMIs** tab. Your keys stay the same.
+3. **Deploy → Manage deployments**, pick the deployment your shortcut and app use, ✏️ → **New version** → **Deploy**.
+
+### In the app
+Open **Expenses**, find the **EMIs** card, tap **Edit**, and add each loan with its monthly amount and the day of the month it's deducted. Tap **Save**.
+
+### How it works
+- Bank messages that mention EMI, loan, NACH, ACH or ECS are put in the **EMI** category on their own.
+- EMIs are kept out of **Spent** and **Per day**, so a big EMI doesn't make your daily spending look huge. They still count against **Saved**, and show as their own bar in the 6-month chart.
+- The EMIs card shows each loan as **Paid**, **Due** or **Not seen**. A payment is matched to a loan when the amount is within 2%. If two loans have the same amount, put a word from the bank message (for example `bajaj`) in the **Match word** column of the EMIs tab.
+- The 9 PM **Spending Summary** (Update 4) reminds you the evening before an EMI is due, and tells you if one hasn't shown up after its date.
+- An SIP or insurance auto-debit can also land in EMI. Change its category in the transaction list and the app remembers it for next time.

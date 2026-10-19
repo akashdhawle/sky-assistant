@@ -63,6 +63,7 @@ const ACTIONS = {
   setCategory: (row, category) => ({ action: 'setCategory', row, category }),
   addFromSms: text => ({ action: 'addSms', text }),
   addManual: entry => ({ action: 'addManual', entry }),
+  setEmis: emis => ({ action: 'setEmis', emis }),
 };
 function call(link, viewKey, body) {
   return fetch(link, {
