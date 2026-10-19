@@ -1,10 +1,13 @@
 /**
  * Sky's Expense Tracker — Google Apps Script backend.
  *
- * doPost: receives a bank SMS from the iPhone Shortcuts automation, checks the
- *         secret key, parses it, and appends one row. The raw text is never stored.
- *         Replies with a one-line `notify` text the shortcut shows as a notification.
- *         With an `action` and the view key, it also answers the Expenses app (app/index.html).
+ * doPost: receives bank SMS from the iPhone Shortcuts automation, checks the
+ *         secret key, parses each message, and appends one row per transaction.
+ *         The raw text is never stored. Several messages separated by ##### lines
+ *         can arrive at once (the shortcut's queue for when the network was down).
+ *         Replies with a `notify` text the shortcut shows as a notification.
+ *         With an `action` and the view key, it also answers the Expenses app
+ *         (docs/index.html) and the daily or weekly summary shortcut.
  * doGet:  serves the chart dashboard, only to the owner of this script.
  *
  * One-time: run setup() from the editor, then deploy twice (see SETUP.md).
@@ -41,11 +44,27 @@ const CATEGORIES = ['Food', 'Groceries', 'Shopping', 'Transport', 'Fuel', 'Bills
   'Entertainment', 'Health', 'Cash', 'Transfers', 'Other'];
 const INCOME_CATEGORIES = ['Salary', 'Refund', 'Interest', 'Cashback', 'Received'];
 
+// [name, any mention, a sure sign it's the sender ("HDFC Bank", "SBI Card", "-SBI" at the end)]
+const BANKS = [
+  ['SBI', /\bsbi\b|state bank|sbicard/, /\bsbi (bank|card|credit card)|state bank|sbicard|-\s*sbi\s*$/],
+  ['ICICI', /icici/, /icici bank|-\s*icici( bank)?\s*$/],
+  ['HDFC', /hdfc/, /hdfc bank|-\s*hdfc( bank)?\s*$/],
+  ['Axis', /\baxis\b/, /axis bank|-\s*axis( bank)?\s*$/],
+  ['Kotak', /kotak/, /kotak (mahindra )?bank|-\s*kotak( bank)?\s*$/],
+];
+const QUEUE_SEPARATOR = /\n?\s*#{5,}\s*\n?/;
+
 // ---------- one-time setup (safe to run again) ----------
 
 function setup() {
   const ss = SpreadsheetApp.getActive();
   const props = PropertiesService.getScriptProperties();
+  // A copied sheet (someone else's, or the template) must never reuse the original's keys.
+  const previous = props.getProperty('SHEET_ID');
+  if (previous && previous !== ss.getId()) {
+    props.deleteProperty('SECRET_KEY');
+    props.deleteProperty('VIEW_KEY');
+  }
   props.setProperty('SHEET_ID', ss.getId());
 
   let tx = ss.getSheetByName(SHEET_TX);
@@ -104,21 +123,41 @@ function doPost(e) {
   } catch (err) {
     return json_({ ok: false, error: 'bad request', notify: 'Expense tracker: bad request' });
   }
-  if (body.action && body.action !== 'add') return json_(appRequest_(body));
+  if (body.action && body.action !== 'add') {
+    const reply = appRequest_(body);
+    if (!reply.notify) reply.notify = reply.ok ? '' : 'Expense tracker: ' + reply.error;
+    return json_(reply);
+  }
 
   const key = PropertiesService.getScriptProperties().getProperty('SECRET_KEY');
   if (!key || body.key !== key) {
     return json_({ ok: false, error: 'unauthorized', notify: 'Expense tracker: wrong secret key' });
   }
+  return json_(receiveMessages_(String(body.text || '')));
+}
 
-  const text = String(body.text || '').slice(0, 1000);
-  const tx = parseSms(text);
-  if (!tx) return json_({ ok: true, saved: false, reason: 'not a transaction', notify: 'Skipped: not a bank transaction' });
-  return json_(saveTx_(tx, hash_(text)));
+/** Saves every transaction in one or more messages (split by ##### lines) and sums up the result. */
+function receiveMessages_(text) {
+  const messages = text.split(QUEUE_SEPARATOR).map(m => m.trim()).filter(Boolean).slice(-30);
+  const results = messages.map(m => {
+    const clean = m.slice(0, 1000);
+    const tx = parseSms(clean);
+    return tx ? saveTx_(tx, hash_(clean))
+      : { ok: true, saved: false, reason: 'not a transaction', notify: 'Skipped: not a bank transaction' };
+  });
+  if (results.length === 0) return { ok: true, saved: false, reason: 'empty', notify: 'Nothing to send' };
+  if (results.length === 1) return results[0];
+  const saved = results.filter(r => r.saved);
+  if (saved.length === 0) {
+    return { ok: true, saved: false, reason: 'nothing new',
+      notify: results.some(r => r.reason === 'duplicate') ? 'Already saved' : 'Skipped: not a bank transaction' };
+  }
+  return { ok: true, saved: true, count: saved.length,
+    notify: (saved.length > 1 ? saved.length + ' transactions saved\n' : '') + saved.map(r => r.notify).join('\n') };
 }
 
 /**
- * Turns an SBI or ICICI transaction SMS into
+ * Turns an SBI, ICICI, HDFC, Axis or Kotak transaction SMS (bank account or card) into
  * {type: 'Debit'|'Credit', bank, amount, merchant, account, mode, category?},
  * or null for anything else (OTPs, reminders, offers, failed transactions).
  */
@@ -129,14 +168,14 @@ function parseSms(text) {
   if (/\botp\b|one time password|verification code/.test(lower)) return null;
   if (/will be (debited|credited)|to be (debited|credited)|is due|due on|due date|requested (money|rs|inr)|has requested|declined|failed|unsuccessful/.test(lower)) return null;
   if (/\boffer\b|t&c|\bwin\b|apply now|pre-approved|pre approved|eligible/.test(lower)) return null;
+  // A credit card bill payment only moves your own money; the bank debit is already counted.
+  if (/payment\b.*\breceived\b.*\b(credit )?card|received\b.*\bpayment\b.*\bcard|thank you for (the |your )?payment|received towards your/.test(lower)) return null;
 
-  let bank = null;
-  if (/icici/.test(lower)) bank = 'ICICI';
-  else if (/\bsbi\b|state bank|sbicard|sbi card/.test(lower)) bank = 'SBI';
+  const bank = bankOf_(lower);
   if (!bank) return null;
 
   const isRefund = /refund|reversed|reversal|credited back/.test(lower);
-  const isDebit = /\bdebited\b|has a debit|\bdebit of\b|\bspent\b|withdrawn|\bpaid\b|sent (rs|inr)/.test(lower);
+  const isDebit = /\bdebited\b|has a debit|\bdebit of\b|\bspent\b|withdrawn|\bpaid\b|sent (rs|inr|₹)|\btxn (of )?(rs|inr|₹)/.test(lower);
   const isCredit = /\bcredited\b|deposited|has been received|received (rs|inr|₹)/.test(lower);
   let type = null;
   if (isRefund && (isCredit || /processed|initiated/.test(lower))) type = 'Credit';
@@ -150,7 +189,7 @@ function parseSms(text) {
   const amount = parseFloat(m[1].replace(/,/g, ''));
   if (!(amount > 0)) return null;
 
-  const acct = t.match(/(?:a\/c|acct|acc|account|card)(?: no\.?)?\s*(?:ending\s*(?:with\s*)?)?[x*]*\s*(\d{3,})\b/i) ||
+  const acct = t.match(/(?:a\/c|acct|acc|\bac\b|account|card)(?: no\.?)?\s*(?:ending\s*(?:with\s*)?)?[x*]*\s*(\d{3,})\b/i) ||
                t.match(/ending\s*(?:with\s*)?(\d{4})/i) ||
                t.match(/[x*]{2,}(\d{3,})\b/i);
   const account = acct ? acct[1].slice(-4) : '';
@@ -162,6 +201,7 @@ function parseSms(text) {
   else if (/neft|imps|rtgs/.test(lower)) mode = 'Bank transfer';
 
   const debitPatterns = [
+    /upi\/p2[am]\/\d+\/([A-Za-z0-9 .&'@\-_]+?)(?: not you|\/|\.|$)/i,     // Axis UPI
     /(?:trf|transfer(?:red)?) to (.+?)(?: refno| ref no| ref\b|\.|$)/i,  // SBI UPI
     /[&;]\s*((?:a\/c|acct|acc)\s*[x*]*\d+) credited/i,               // ICICI transfer to another account
     /;\s*(.+?) credited/i,                                           // ICICI UPI
@@ -169,11 +209,14 @@ function parseSms(text) {
     /\bto ([A-Za-z0-9 .&'\-@]+?) on \d/i,
     /\bat ([A-Za-z0-9 .&'*\-_/]+?) on \d/i,                          // "spent ... at AMAZON on 18/10/26"
     /\bon \d{1,2}[-\/ ]?\w{2,3}[-\/ ]?\d{2,4} (?:on|at) ([A-Za-z0-9 .&'*\-_/]+?)(?:\.|$)/i, // ICICI card
-    /\bat ([A-Za-z0-9 .&'*\-_/]+?)(?:\.| avl| txn|$)/i,
+    /\bat ([A-Za-z0-9 .&'*\-_/]+?)(?:\.| avl| txn| by upi| on |$)/i,
+    /\d{1,2}:\d{2}(?::\d{2})?(?: ist)? ([A-Za-z][A-Za-z0-9 .&'*\-_/]+?) avl/i, // Axis card
     /info[:\s]+([A-Za-z0-9 .&'*\-_/]+?)(?:\.|$)/i,
     /\bfor (?!rs\b|inr\b)([A-Za-z][A-Za-z0-9 .&'*\-_/]+?)(?:\.|$| -)/i, // "... for NETFLIX."
   ];
   const creditPatterns = [
+    /upi\/p2[am]\/\d+\/([A-Za-z0-9 .&'@\-_]+?)(?: not you|\/|\.|$)/i,     // Axis UPI
+    /neft cr-[a-z0-9]+-([A-Za-z][A-Za-z0-9 .&'\-_]+?)(?:-|\.|$)/i,           // HDFC NEFT
     /(?:refund|reversal).*?\b(?:at|from|for) (?:your )?(?:txn at |transaction at )?([A-Za-z][A-Za-z0-9 .&'*\-_/]+?)(?: has| on \d| is|\.|$)/i,
     /\bvpa\s+([\w.\-]+@[\w.\-]+)/i,
     /\bfrom (?:vpa )?([A-Za-z0-9 .&'@\-_]+?)(?: ref| refno| on \d|\.| upi|\(|$)/i,
@@ -186,7 +229,7 @@ function parseSms(text) {
     if (mm && mm[1] && !/^\d+$/.test(mm[1].trim())) { merchant = mm[1].trim(); break; }
   }
   if (type === 'Debit' && mode === 'ATM') merchant = 'ATM withdrawal';
-  merchant = merchant.replace(/\s+/g, ' ').slice(0, 60) || 'Unknown';
+  merchant = merchant.replace(/\s+(by|via) upi\b.*$/i, '').replace(/\s+/g, ' ').slice(0, 60) || 'Unknown';
 
   const tx = { type: type, bank: bank, amount: amount, merchant: merchant, account: account, mode: mode };
   if (type === 'Credit') {
@@ -197,6 +240,18 @@ function parseSms(text) {
     else tx.category = 'Received';
   }
   return tx;
+}
+
+/** Which bank sent the message: a sure sign wins, otherwise the first bank mentioned. */
+function bankOf_(lower) {
+  const sure = BANKS.find(b => b[2].test(lower));
+  if (sure) return sure[0];
+  let best = null, at = Infinity;
+  BANKS.forEach(b => {
+    const m = lower.match(b[1]);
+    if (m && m.index < at) { best = b[0]; at = m.index; }
+  });
+  return best;
 }
 
 /** Appends one transaction (deduplicated by id) and returns the reply for the phone. */
@@ -301,11 +356,63 @@ function appRequest_(body) {
       case 'setBudgets': return { ok: true, result: setBudgets_(body.budgets || {}) };
       case 'addSms': return { ok: true, result: addFromSms_(body.text) };
       case 'addManual': return { ok: true, result: addManual_(body.entry || {}) };
+      case 'summary': {
+        const text = summary_(body.period === 'week' ? 'week' : 'day', new Date());
+        return { ok: true, result: text, notify: text };
+      }
       default: return { ok: false, error: 'Unknown action' };
     }
   } catch (err) {
     return { ok: false, error: err.message };
   }
+}
+
+// ---------- daily and weekly summary (for a Shortcuts time automation) ----------
+
+/** One notification-sized summary of today or the last 7 days, with budgets close to their limit. */
+function summary_(period, now) {
+  const tz = Session.getScriptTimeZone();
+  const dayKey = d => Utilities.formatDate(d, tz, 'yyyyMMdd');
+  const monthKey = d => Utilities.formatDate(d, tz, 'yyyyMM');
+  const days = period === 'week' ? 7 : 1;
+  const inDays = (d, from, n) => {
+    const k = dayKey(d);
+    for (let i = from; i < from + n; i++) if (k === dayKey(new Date(now.getTime() - i * 86400000))) return true;
+    return false;
+  };
+  const tx = getData_().tx.map(t => Object.assign(t, { d: new Date(t.date) }));
+  const spend = list => list.reduce((s, t) => s + (t.type === 'Debit' ? t.amount : t.category === 'Refund' ? -t.amount : 0), 0);
+  const current = tx.filter(t => inDays(t.d, 0, days));
+  const earlier = tx.filter(t => inDays(t.d, days, days));
+  const month = tx.filter(t => monthKey(t.d) === monthKey(now));
+  const spent = spend(current), before = spend(earlier);
+  const payments = current.filter(t => t.type === 'Debit').length;
+
+  const byCat = {};
+  current.filter(t => t.type === 'Debit').forEach(t => byCat[t.category] = (byCat[t.category] || 0) + t.amount);
+  const top = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a]).slice(0, 3)
+    .map(c => c + ' ' + inr_(byCat[c])).join(', ');
+
+  const label = period === 'week' ? 'This week' : 'Today';
+  let line = payments === 0 ? label + ': no spending 🎉'
+    : label + ': ' + inr_(spent) + ' on ' + payments + (payments === 1 ? ' payment' : ' payments') + (top ? ' (' + top + ')' : '');
+  if (before > 0) {
+    const pct = Math.round((spent - before) / before * 100);
+    line += period === 'week' ? ', ' + (pct > 0 ? '▲' : '▼') + Math.abs(pct) + '% vs last week' : '';
+  }
+  const received = current.filter(t => t.type === 'Credit' && t.category !== 'Refund').reduce((s, t) => s + t.amount, 0);
+  if (received > 0) line += '. Received ' + inr_(received);
+  const monthName = Utilities.formatDate(now, tz, 'MMMM');
+  line += '. ' + monthName + ' so far ' + inr_(spend(month));
+
+  const budgets = getBudgets_();
+  const warnings = Object.keys(budgets).map(c => {
+    const used = month.filter(t => t.type === 'Debit' && t.category === c).reduce((s, t) => s + t.amount, 0);
+    return { c: c, pct: Math.round(used / budgets[c] * 100) };
+  }).filter(w => w.pct >= 80).sort((a, b) => b.pct - a.pct)
+    .map(w => w.c + ' ' + w.pct + '%');
+  if (warnings.length) line += '. ⚠️ Budget: ' + warnings.join(', ');
+  return line + '.';
 }
 
 // ---------- dashboard ----------
@@ -400,7 +507,7 @@ function addFromSms(text) {
 function addFromSms_(text) {
   const clean = String(text || '').slice(0, 1000);
   const tx = parseSms(clean);
-  if (!tx) throw new Error("That doesn't look like an SBI or ICICI transaction message.");
+  if (!tx) throw new Error("That doesn't look like a bank transaction message (SBI, ICICI, HDFC, Axis or Kotak).");
   return saveTx_(tx, hash_(clean));
 }
 

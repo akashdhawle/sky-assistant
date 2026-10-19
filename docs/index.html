@@ -153,7 +153,7 @@
       <button data-tab="manual">Add manually</button>
     </div>
     <div id="tab-sms">
-      <label class="field">Copy a missed SBI or ICICI message from Messages and paste it here
+      <label class="field">Copy a missed bank message from Messages and paste it here
         <textarea id="smsText" placeholder="Dear UPI user A/C X1234 debited by…"></textarea>
       </label>
     </div>
@@ -290,8 +290,9 @@ function render() {
   const days = (y === now.getFullYear() && m === now.getMonth()) ? now.getDate() : new Date(y, m + 1, 0).getDate();
   $('perDay').textContent = inr(spent / days);
   const bankSpend = b => sum(debits(month).filter(t => t.bank === b)) - sum(month.filter(t => isRefund(t) && t.bank === b));
-  $('banks').textContent = `SBI ${inr(bankSpend('SBI'))} · ICICI ${inr(bankSpend('ICICI'))}` +
-    (bankSpend('Cash') ? ` · Cash ${inr(bankSpend('Cash'))}` : '');
+  const banks = [...new Set(month.map(t => t.bank).filter(Boolean))]
+    .map(b => [b, bankSpend(b)]).filter(x => x[1] > 0).sort((x, y) => y[1] - x[1]);
+  $('banks').textContent = banks.map(([b, v]) => `${b} ${inr(v)}`).join(' · ');
 
   // spending per category, with refunds netted out
   const byCat = {};

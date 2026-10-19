@@ -3,7 +3,7 @@
 You do this once. Part A is easiest on a computer (Windows is fine). Parts B and C are on your iPhone.
 
 Files:
-- `Code.gs` is the script that reads SBI and ICICI messages and serves the dashboard.
+- `Code.gs` is the script that reads bank messages (SBI, ICICI, HDFC, Axis, Kotak) and serves the dashboard.
 - `Dashboard.html` is the chart dashboard.
 
 ---
@@ -126,3 +126,43 @@ Go to **Deploy → Manage deployments**, edit each deployment, choose **Version:
 4. Open **Expenses** from the Home Screen. Paste your **receive link** (the same one as in the shortcut) and the **View key**, then tap **Connect**. You only do this once.
 
 The old Google-hosted dashboard link still works. You can delete its Home Screen icon once the new app is set up.
+
+---
+
+## Update 4: more banks, no lost messages, daily summary (about 15 minutes)
+
+### On your computer
+1. In Apps Script, select everything in `Code.gs` (**Ctrl+A**), delete it, paste the new `Code.gs` once, and press **Ctrl+S**. Do the same for `Dashboard`.
+2. Run `setup`. Your keys stay the same.
+3. **Deploy → Manage deployments**, pick the deployment whose URL is in your shortcut and app, ✏️ → **New version** → **Deploy**.
+
+### On your iPhone: more banks
+HDFC, Axis and Kotak accounts and SBI, ICICI, HDFC and Axis credit cards are now understood. Some of them word their messages differently, so add four more message automations, exactly like the `debit` one (**Run Immediately**, **Run Shortcut → Log Bank SMS**, input **Shortcut Input**):
+`Sent Rs`, `Received Rs`, `deposited`, `Txn`
+
+Credit card bill payments are ignored on purpose, because the money leaving your bank account is already counted.
+
+### On your iPhone: never lose a message on a weak network
+The shortcut now keeps each message in a small file on your phone until Google confirms it. If the network is down, it stays in the file and goes out with the next bank message. Open **Log Bank SMS** and make it look like this, top to bottom:
+
+1. **If** Shortcut Input contains `OTP` → **Stop This Shortcut** → **End If** (as before).
+2. **Append to Text File**: tap *Text* and choose **Shortcut Input**, press return, then type `#####`. Set the file path to `sky-pending.txt`. Leave **Make New Line** on.
+3. **Get File from Folder**: folder **Shortcuts**, path `sky-pending.txt`.
+4. **Get contents of URL** (as before), but change the `text` field from *Shortcut Input* to **File**.
+5. **Get Dictionary Value**: *Value* for `notify` in **Contents of URL** (as before).
+6. **Text**: type `#####`.
+7. **Save File**: save the **Text** to **Shortcuts**, turn **Ask Where to Save** off, path `sky-pending.txt`, turn **Overwrite If File Exists** on.
+8. **Show Notification**: **Dictionary Value** (as before).
+
+The file only ever holds messages that haven't reached your sheet yet. Sending the same message twice is harmless; it's saved once. To push anything stuck without waiting for the next message, open the Shortcuts app and tap **Log Bank SMS**.
+
+### On your iPhone: daily and weekly summary
+1. **Shortcuts tab → +**, name it **Spending Summary**.
+2. **Get contents of URL**: your receive link, **Method POST**, **Request Body JSON** with three Text fields: `viewKey` → your View key, `action` → `summary`, `period` → `day`.
+3. **Get Dictionary Value**: *Value* for `notify` in **Contents of URL**.
+4. **Show Notification**: **Dictionary Value**.
+5. **Automation → + → Time of Day**, choose 9:00 PM, **Daily**, **Run Immediately**, then **Run Shortcut → Spending Summary**.
+
+Each night you get something like `Today: ₹1,549 on 2 payments (Shopping ₹1,299, Food ₹250). October so far ₹18,200. ⚠️ Budget: Food 83%.`
+
+For a weekly one, duplicate the shortcut as **Weekly Summary**, change `period` to `week`, and add a **Time of Day** automation set to **Weekly**, Sunday evening.

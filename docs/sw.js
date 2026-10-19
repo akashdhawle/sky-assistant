@@ -1,6 +1,6 @@
 // Keeps the app shell available offline. Your data is never cached here;
 // the page keeps its own last-loaded copy on this device only.
-const CACHE = 'expenses-v1';
+const CACHE = 'expenses-v2';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png',
   'apple-touch-icon.png', 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js'];
 
