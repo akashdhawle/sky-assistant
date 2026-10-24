@@ -516,6 +516,9 @@ function greeting() {
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const STOP_WORDS = /^(stop|thanks|thank you|bye|goodbye|that'?s all|that is all|ok bye)\b/i;
 let talking = false, recog = null;
+// Keyboard mode: when the phone won't let the page use the mic, you speak with the keyboard's own
+// dictation mic and Sky still answers out loud.
+let keyboardTalk = false, recogBlocked = '';
 function talkState(t) { $('talkState').textContent = t; }
 function setTalking(on) {
   talking = on;
@@ -544,7 +547,7 @@ function pickVoice() {
 }
 function renderVoices() {
   const list = voices(), cur = pickVoice();
-  if (!list.length || !Recognition) return;
+  if (!list.length) return;
   $('voice').innerHTML = list.map(v =>
     `<option value="${esc(v.voiceURI)}"${cur && v.voiceURI === cur.voiceURI ? ' selected' : ''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('');
   $('voiceRow').hidden = false;
@@ -578,7 +581,8 @@ function listen(fromTap) {
   recog.onerror = e => {
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
       setTalking(false);
-      talkState(fromTap ? 'Microphone blocked. Allow it for this app in Settings, then tap 🎤 again.' : 'Tap 🎤 to reply.');
+      if (fromTap) { recogBlocked = e.error; startKeyboardTalk(false); }
+      else talkState('Tap 🎤 to reply.');
     }
   };
   recog.onend = () => {
@@ -603,19 +607,42 @@ if (window.speechSynthesis) {
     if (!talking) { speechSynthesis.cancel(); say(ownerName ? 'Hi ' + ownerName + ', this is my new voice.' : 'Hi, this is my new voice.'); }
   };
 }
-if (Recognition) {
+function unlockVoice() {
+  if (window.speechSynthesis) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); }
+}
+function startKeyboardTalk(focus) {
+  keyboardTalk = true;
+  $('talk').classList.add('on'); $('talk').setAttribute('aria-label', 'Stop talking');
+  if (focus) $('askText').focus();
+  talkState((recogBlocked ? 'This phone won\'t let the app listen (' + recogBlocked + '). ' : '')
+    + 'Tap the box, use the 🎙 on your keyboard, then Ask. Sky answers out loud. Tap 🎤 to stop.');
+}
+function stopKeyboardTalk() {
+  keyboardTalk = false;
+  $('talk').classList.remove('on'); $('talk').setAttribute('aria-label', 'Talk to Sky');
+  talkState('');
+  if (window.speechSynthesis) speechSynthesis.cancel();
+}
+if (Recognition || window.speechSynthesis) {
   $('talk').hidden = false;
   $('talk').onclick = () => {
     if (talking) { setTalking(false); return; }
+    if (keyboardTalk) { stopKeyboardTalk(); return; }
+    if (!Recognition || recogBlocked) { unlockVoice(); startKeyboardTalk(true); return; }
     // The mic has to start inside the tap, so the greeting is shown rather than spoken (Sky would hear itself).
     // A silent utterance in the same tap unlocks the voice for the answers.
     setTalking(true);
-    if (window.speechSynthesis) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); }
+    unlockVoice();
     listen(true);
     if (talking) talkState((ownerName ? greeting() + '. ' : '') + 'Listening… say "thanks" when you\'re done');
   };
 }
-$('askForm').onsubmit = e => { e.preventDefault(); askSky($('askText').value); };
+$('askForm').onsubmit = e => {
+  e.preventDefault();
+  const text = $('askText').value.trim();
+  if (keyboardTalk && STOP_WORDS.test(text)) { $('askText').value = ''; stopKeyboardTalk(); say('Bye!'); return; }
+  askSky(text).then(reply => { if (keyboardTalk && reply) say(reply); });
+};
 $('askChips').onclick = e => { if (e.target.dataset.q) askSky(e.target.dataset.q); };
 
 // ----- Lists: books, movies, places, quotes and journal (Assistant.gs) -----
