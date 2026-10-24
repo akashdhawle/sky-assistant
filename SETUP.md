@@ -308,3 +308,7 @@ For a back-and-forth conversation without building a longer shortcut: open the a
 - The first time, allow the microphone when the phone asks. If you said no by mistake: iPhone **Settings → Safari → Microphone** (or **Settings → Apps → Safari**), then reopen the app.
 - Use the speaker, or the answer may be picked up as your next question. Headphones work best.
 - The 🎤 only shows on phones and browsers that support speech recognition. It uses the phone's own speech features, so it costs nothing extra.
+
+## Your name
+
+Sky greets you by name in the app and when Talk mode starts. In Apps Script open **Project Settings → Script properties**, add `OWNER_NAME` with your first name (for example `Akash`) and save. No redeploy needed: reopen the app. A friend with their own copy sets their own name the same way. Without it Sky just says "Ask Sky".

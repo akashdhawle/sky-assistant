@@ -97,6 +97,7 @@
   .mic[hidden] { display: none; }
   .mic.on { background: var(--bad); border-color: var(--bad); color: #fff; animation: pulse 1.4s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .65; } }
+  #hello { text-transform: none; letter-spacing: 0; font-size: 18px; color: var(--text); }
   #talkState { font-size: 13px; color: var(--muted); margin-top: 8px; }
   #talkState:empty { display: none; }
   .views { display: flex; gap: 6px; background: var(--card); border: 1px solid var(--line); padding: 4px; border-radius: 12px; margin-top: 4px; }
@@ -138,7 +139,7 @@
 
 <div id="app" hidden>
   <div class="card">
-    <h2>Ask Sky</h2>
+    <h2 id="hello">Ask Sky</h2>
     <div class="chat" id="chat" hidden></div>
     <div class="chips" id="askChips">
       <button data-q="How much did I spend this week?">This week's spending</button>
@@ -237,7 +238,7 @@ const monthName = d => d.toLocaleString('en-IN', { month: 'short', year: 'numeri
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const $ = id => document.getElementById(id);
 
-let all = [], categories = [], incomeCategories = [], budgets = {}, emis = [], charts = {};
+let ownerName = '', all = [], categories = [], incomeCategories = [], budgets = {}, emis = [], charts = {};
 let cursor = new Date(); cursor = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
 let editing = false, editingEmis = false, addTab = 'sms', addType = 'Debit';
 
@@ -251,6 +252,7 @@ function load() {
   return api('getData')
     .then(d => {
       all = d.tx.map(t => Object.assign(t, { d: new Date(t.date) }));
+      ownerName = d.ownerName || ''; $('hello').textContent = greeting();
       categories = d.categories; incomeCategories = d.incomeCategories; budgets = d.budgets || {}; emis = d.emis || [];
       $('msg').hidden = true;
       if ($('views').hidden) { $('views').hidden = false; setView(view); }
@@ -499,6 +501,12 @@ function askSky(text) {
     .catch(e => { reply.text = 'Sorry, that didn\'t work: ' + e.message; renderChat(); return reply.text; });
 }
 
+function greeting() {
+  if (!ownerName) return 'Ask Sky';
+  const h = new Date().getHours();
+  return (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening') + ', ' + ownerName;
+}
+
 // ----- Talk mode: listen, ask, speak the answer, listen again -----
 // Uses the browser's own speech recognition and voice, so it costs nothing extra.
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -556,9 +564,11 @@ if (Recognition) {
   $('talk').hidden = false;
   $('talk').onclick = () => {
     if (talking) { setTalking(false); return; }
-    // iPhone only lets a page speak after a tap, so unlock the voice now.
-    if (window.speechSynthesis) speechSynthesis.speak(new SpeechSynthesisUtterance(''));
-    setTalking(true); listen();
+    // iPhone only lets a page speak after a tap, so the greeting is spoken right away, which unlocks the voice.
+    setTalking(true);
+    talkState('Speaking…');
+    say(ownerName ? greeting() + '. What can I do for you?' : 'Hi! What can I do for you?')
+      .then(() => { if (talking) listen(); });
   };
 }
 $('askForm').onsubmit = e => { e.preventDefault(); askSky($('askText').value); };
