@@ -35,203 +35,209 @@ const LIST_STATUSES = ['To read', 'Reading', 'Read', 'To watch', 'Watched', 'Wan
 const SHEET_QUOTES = 'Quotes';
 const SHEET_JOURNAL = 'Journal';
 
-const ASK_SYSTEM = [
-  "You are Sky, Akash's personal assistant. You help with his expense tracker, which logs his bank transactions",
-  '(SBI, ICICI, HDFC, Axis, Kotak) in a Google Sheet with amounts in Indian rupees, and with his lists:',
-  'books, movies, places to visit, saved quotes and his journal.',
-  '',
-  'Your reply is read aloud by Siri, so:',
-  '- Answer in 1 to 3 short spoken sentences, under 60 words. No lists, markdown, emoji or row numbers.',
-  '- Say amounts like "₹1,240" and dates like "21 October".',
-  '',
-  'Money:',
-  'Use the tools for every fact about money; never guess a number.',
-  'When Akash says a transaction is in the wrong category, find it, change it with set_category, and say exactly',
-  'what changed, for example "Moved ₹450 Swiggy on 21 October from Food to Gifts." If several transactions could',
-  'match, ask which one instead of guessing.',
-  'Change at most ' + BULK_CHANGE_LIMIT + ' transactions per request. If a fix needs more, say how many and ask him to confirm first.',
-  'If he says undo, use undo_last_change.',
-  'Spending categories: ' + CATEGORIES.join(', ') + '. Income categories: ' + INCOME_CATEGORIES.join(', ') + '.',
-  '',
-  'Lists:',
-  '- "Add X to my TBR / reading list" is a book; "watchlist" is a movie or show; "places to visit" is a place.',
-  '- When adding a book or movie without the author or year, fill it in only if you are sure which one he means.',
-  '- Say what you did in a few words, for example "Added Atomic Habits by James Clear to your reading list."',
-  '- "I finished X" or "I watched X" means update its status; ask for a rating out of 5 only if he seems happy to give one.',
-  '- To suggest what to read or watch next, look at the list first and pick from it.',
-  '- Save quotes word for word. When reading one back, say the quote, then who said it or the book.',
-  '- Journal: save what he says in his own words, only removing filler like "um". Read entries back only when he asks.',
-  'If he asks for something you cannot do yet (news, reminders, stocks and so on), say it is coming soon.',
-].join('\n');
+// Built when needed, not when the file loads: Apps Script may load this file before Code.gs,
+// which defines CATEGORIES.
+function askSystem_() {
+  return [
+    "You are Sky, Akash's personal assistant. You help with his expense tracker, which logs his bank transactions",
+    '(SBI, ICICI, HDFC, Axis, Kotak) in a Google Sheet with amounts in Indian rupees, and with his lists:',
+    'books, movies, places to visit, saved quotes and his journal.',
+    '',
+    'Your reply is read aloud by Siri, so:',
+    '- Answer in 1 to 3 short spoken sentences, under 60 words. No lists, markdown, emoji or row numbers.',
+    '- Say amounts like "₹1,240" and dates like "21 October".',
+    '',
+    'Money:',
+    'Use the tools for every fact about money; never guess a number.',
+    'When Akash says a transaction is in the wrong category, find it, change it with set_category, and say exactly',
+    'what changed, for example "Moved ₹450 Swiggy on 21 October from Food to Gifts." If several transactions could',
+    'match, ask which one instead of guessing.',
+    'Change at most ' + BULK_CHANGE_LIMIT + ' transactions per request. If a fix needs more, say how many and ask him to confirm first.',
+    'If he says undo, use undo_last_change.',
+    'Spending categories: ' + CATEGORIES.join(', ') + '. Income categories: ' + INCOME_CATEGORIES.join(', ') + '.',
+    '',
+    'Lists:',
+    '- "Add X to my TBR / reading list" is a book; "watchlist" is a movie or show; "places to visit" is a place.',
+    '- When adding a book or movie without the author or year, fill it in only if you are sure which one he means.',
+    '- Say what you did in a few words, for example "Added Atomic Habits by James Clear to your reading list."',
+    '- "I finished X" or "I watched X" means update its status; ask for a rating out of 5 only if he seems happy to give one.',
+    '- To suggest what to read or watch next, look at the list first and pick from it.',
+    '- Save quotes word for word. When reading one back, say the quote, then who said it or the book.',
+    '- Journal: save what he says in his own words, only removing filler like "um". Read entries back only when he asks.',
+    'If he asks for something you cannot do yet (news, reminders, stocks and so on), say it is coming soon.',
+  ].join('\n');
+}
 
-const ASK_TOOLS = [
-  {
-    name: 'spending_summary',
-    description: 'Totals for a period: money spent and received, spending by category, top merchants, and monthly budget use.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: {
-        period: { type: 'string', enum: ['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month'] },
+function askTools_() {
+  return [
+    {
+      name: 'spending_summary',
+      description: 'Totals for a period: money spent and received, spending by category, top merchants, and monthly budget use.',
+      strict: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          period: { type: 'string', enum: ['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month'] },
+        },
+        required: ['period'],
+        additionalProperties: false,
       },
-      required: ['period'],
-      additionalProperties: false,
     },
-  },
-  {
-    name: 'find_transactions',
-    description: 'Searches transactions, newest first. Use empty strings or 0 for filters you do not need. Dates are yyyy-mm-dd.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: {
-        merchant: { type: 'string', description: 'Part of the merchant name, any case. Empty for any.' },
-        category: { type: 'string', description: 'Exact category name. Empty for any.' },
-        from_date: { type: 'string', description: 'First day to include. Empty for no limit.' },
-        to_date: { type: 'string', description: 'Last day to include. Empty for no limit.' },
-        min_amount: { type: 'number', description: 'Smallest amount in rupees. 0 for any.' },
-        limit: { type: 'integer', description: 'How many to return, 1 to 25.' },
+    {
+      name: 'find_transactions',
+      description: 'Searches transactions, newest first. Use empty strings or 0 for filters you do not need. Dates are yyyy-mm-dd.',
+      strict: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          merchant: { type: 'string', description: 'Part of the merchant name, any case. Empty for any.' },
+          category: { type: 'string', description: 'Exact category name. Empty for any.' },
+          from_date: { type: 'string', description: 'First day to include. Empty for no limit.' },
+          to_date: { type: 'string', description: 'Last day to include. Empty for no limit.' },
+          min_amount: { type: 'number', description: 'Smallest amount in rupees. 0 for any.' },
+          limit: { type: 'integer', description: 'How many to return, 1 to 25.' },
+        },
+        required: ['merchant', 'category', 'from_date', 'to_date', 'min_amount', 'limit'],
+        additionalProperties: false,
       },
-      required: ['merchant', 'category', 'from_date', 'to_date', 'min_amount', 'limit'],
-      additionalProperties: false,
     },
-  },
-  {
-    name: 'set_category',
-    description: 'Moves one transaction to another category and logs the change so it can be undone. ' +
-      'remember_rule: true makes future payments to the same merchant use this category too.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: {
-        row: { type: 'integer', description: 'The row from find_transactions or review_categories.' },
-        category: { type: 'string', enum: CATEGORIES.concat(INCOME_CATEGORIES) },
-        remember_rule: { type: 'boolean' },
+    {
+      name: 'set_category',
+      description: 'Moves one transaction to another category and logs the change so it can be undone. ' +
+        'remember_rule: true makes future payments to the same merchant use this category too.',
+      strict: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          row: { type: 'integer', description: 'The row from find_transactions or review_categories.' },
+          category: { type: 'string', enum: CATEGORIES.concat(INCOME_CATEGORIES) },
+          remember_rule: { type: 'boolean' },
+        },
+        required: ['row', 'category', 'remember_rule'],
+        additionalProperties: false,
       },
-      required: ['row', 'category', 'remember_rule'],
-      additionalProperties: false,
     },
-  },
-  {
-    name: 'review_categories',
-    description: 'Lists spending that may be in the wrong category: everything in Other, and merchants that appear ' +
-      'under more than one category. Judge from the merchant names before suggesting changes.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: { period: { type: 'string', enum: ['this_month', 'last_month'] } },
-      required: ['period'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'undo_last_change',
-    description: 'Puts back the category of the most recent change made through Sky.',
-    strict: true,
-    input_schema: { type: 'object', properties: {}, required: [], additionalProperties: false },
-  },
-  {
-    name: 'list_add',
-    description: 'Adds a book, movie or place to its list. detail is the author (books), year or director (movies), ' +
-      'or city and country (places); note is anything else he mentions. Use empty strings for what you do not know.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: {
-        list: { type: 'string', enum: ['books', 'movies', 'places'] },
-        title: { type: 'string' },
-        detail: { type: 'string' },
-        note: { type: 'string' },
+    {
+      name: 'review_categories',
+      description: 'Lists spending that may be in the wrong category: everything in Other, and merchants that appear ' +
+        'under more than one category. Judge from the merchant names before suggesting changes.',
+      strict: true,
+      input_schema: {
+        type: 'object',
+        properties: { period: { type: 'string', enum: ['this_month', 'last_month'] } },
+        required: ['period'],
+        additionalProperties: false,
       },
-      required: ['list', 'title', 'detail', 'note'],
-      additionalProperties: false,
     },
-  },
-  {
-    name: 'list_update',
-    description: 'Changes an item on a list, found by part of its title. Books: To read, Reading, Read. ' +
-      'Movies: To watch, Watched. Places: Want to go, Visited. Removed takes it off the list. ' +
-      'Use keep for status, 0 for rating and an empty note to leave them as they are. A new note replaces the old one.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: {
-        list: { type: 'string', enum: ['books', 'movies', 'places'] },
-        title: { type: 'string', description: 'Part of the title, any case.' },
-        status: { type: 'string', enum: LIST_STATUSES.concat(['Removed', 'keep']) },
-        rating: { type: 'integer', description: '1 to 5, or 0 to keep.' },
-        note: { type: 'string' },
+    {
+      name: 'undo_last_change',
+      description: 'Puts back the category of the most recent change made through Sky.',
+      strict: true,
+      input_schema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+    },
+    {
+      name: 'list_add',
+      description: 'Adds a book, movie or place to its list. detail is the author (books), year or director (movies), ' +
+        'or city and country (places); note is anything else he mentions. Use empty strings for what you do not know.',
+      strict: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          list: { type: 'string', enum: ['books', 'movies', 'places'] },
+          title: { type: 'string' },
+          detail: { type: 'string' },
+          note: { type: 'string' },
+        },
+        required: ['list', 'title', 'detail', 'note'],
+        additionalProperties: false,
       },
-      required: ['list', 'title', 'status', 'rating', 'note'],
-      additionalProperties: false,
     },
-  },
-  {
-    name: 'list_show',
-    description: 'Reads a list, newest first, with how many items have each status. Use any for every status.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: {
-        list: { type: 'string', enum: ['books', 'movies', 'places'] },
-        status: { type: 'string', enum: LIST_STATUSES.concat(['any']) },
-        limit: { type: 'integer', description: 'How many to return, 1 to 30.' },
+    {
+      name: 'list_update',
+      description: 'Changes an item on a list, found by part of its title. Books: To read, Reading, Read. ' +
+        'Movies: To watch, Watched. Places: Want to go, Visited. Removed takes it off the list. ' +
+        'Use keep for status, 0 for rating and an empty note to leave them as they are. A new note replaces the old one.',
+      strict: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          list: { type: 'string', enum: ['books', 'movies', 'places'] },
+          title: { type: 'string', description: 'Part of the title, any case.' },
+          status: { type: 'string', enum: LIST_STATUSES.concat(['Removed', 'keep']) },
+          rating: { type: 'integer', description: '1 to 5, or 0 to keep.' },
+          note: { type: 'string' },
+        },
+        required: ['list', 'title', 'status', 'rating', 'note'],
+        additionalProperties: false,
       },
-      required: ['list', 'status', 'limit'],
-      additionalProperties: false,
     },
-  },
-  {
-    name: 'quote_save',
-    description: 'Saves a quote word for word. source is the book, film or place it is from; author is who said or wrote it. ' +
-      'Empty strings when unknown.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: { quote: { type: 'string' }, source: { type: 'string' }, author: { type: 'string' } },
-      required: ['quote', 'source', 'author'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'quote_random',
-    description: 'Picks a random saved quote. about narrows it to quotes whose text, source or author contains it; empty for any.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: { about: { type: 'string' } },
-      required: ['about'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'journal_add',
-    description: 'Saves a journal entry for today, in his own words.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: { entry: { type: 'string' } },
-      required: ['entry'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'journal_read',
-    description: 'Reads journal entries, newest first. Dates are yyyy-mm-dd; empty strings for no limit or no search.',
-    strict: true,
-    input_schema: {
-      type: 'object',
-      properties: {
-        from_date: { type: 'string' },
-        to_date: { type: 'string' },
-        search: { type: 'string', description: 'A word or phrase the entry contains.' },
-        limit: { type: 'integer', description: 'How many to return, 1 to 10.' },
+    {
+      name: 'list_show',
+      description: 'Reads a list, newest first, with how many items have each status. Use any for every status.',
+      strict: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          list: { type: 'string', enum: ['books', 'movies', 'places'] },
+          status: { type: 'string', enum: LIST_STATUSES.concat(['any']) },
+          limit: { type: 'integer', description: 'How many to return, 1 to 30.' },
+        },
+        required: ['list', 'status', 'limit'],
+        additionalProperties: false,
       },
-      required: ['from_date', 'to_date', 'search', 'limit'],
-      additionalProperties: false,
     },
-  },
-];
+    {
+      name: 'quote_save',
+      description: 'Saves a quote word for word. source is the book, film or place it is from; author is who said or wrote it. ' +
+        'Empty strings when unknown.',
+      strict: true,
+      input_schema: {
+        type: 'object',
+        properties: { quote: { type: 'string' }, source: { type: 'string' }, author: { type: 'string' } },
+        required: ['quote', 'source', 'author'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'quote_random',
+      description: 'Picks a random saved quote. about narrows it to quotes whose text, source or author contains it; empty for any.',
+      strict: true,
+      input_schema: {
+        type: 'object',
+        properties: { about: { type: 'string' } },
+        required: ['about'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'journal_add',
+      description: 'Saves a journal entry for today, in his own words.',
+      strict: true,
+      input_schema: {
+        type: 'object',
+        properties: { entry: { type: 'string' } },
+        required: ['entry'],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: 'journal_read',
+      description: 'Reads journal entries, newest first. Dates are yyyy-mm-dd; empty strings for no limit or no search.',
+      strict: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          from_date: { type: 'string' },
+          to_date: { type: 'string' },
+          search: { type: 'string', description: 'A word or phrase the entry contains.' },
+          limit: { type: 'integer', description: 'How many to return, 1 to 10.' },
+        },
+        required: ['from_date', 'to_date', 'search', 'limit'],
+        additionalProperties: false,
+      },
+    },
+  ];
+}
 
 // ---------- the conversation ----------
 
@@ -318,8 +324,8 @@ function callClaude_(apiKey, model, messages) {
   const body = {
     model: model,
     max_tokens: 4096,
-    system: ASK_SYSTEM,
-    tools: ASK_TOOLS,
+    system: askSystem_(),
+    tools: askTools_(),
     messages: messages,
     output_config: { effort: 'low' },
     cache_control: { type: 'ephemeral' },
@@ -351,9 +357,9 @@ function callClaude_(apiKey, model, messages) {
 
 function callGemini_(apiKey, model, contents) {
   const body = {
-    systemInstruction: { parts: [{ text: ASK_SYSTEM }] },
+    systemInstruction: { parts: [{ text: askSystem_() }] },
     contents: contents,
-    tools: [{ functionDeclarations: ASK_TOOLS.map(geminiTool_) }],
+    tools: [{ functionDeclarations: askTools_().map(geminiTool_) }],
   };
   const resp = UrlFetchApp.fetch(GEMINI_URL + encodeURIComponent(model) + ':generateContent', {
     method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': apiKey },
