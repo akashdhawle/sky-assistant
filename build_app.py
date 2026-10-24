@@ -65,6 +65,11 @@ const ACTIONS = {
   addManual: entry => ({ action: 'addManual', entry }),
   setEmis: emis => ({ action: 'setEmis', emis }),
   ask: text => ({ action: 'ask', text }),
+  getLists: () => ({ action: 'lists' }),
+  listAdd: (list, item) => ({ action: 'listAdd', list, item }),
+  listSet: (list, row, changes) => ({ action: 'listSet', list, row, changes }),
+  quoteAdd: quote => ({ action: 'quoteAdd', quote }),
+  journalAdd: entry => ({ action: 'journalAdd', entry }),
 };
 function call(link, viewKey, body) {
   return fetch(link, {
@@ -92,6 +97,7 @@ const api = (fn, ...args) => {
 function showConnect() {
   document.querySelector('.month').style.visibility = 'hidden';
   $('msg').hidden = true; $('app').hidden = true; $('fab').hidden = true; $('connect').hidden = false;
+  $('views').hidden = true; $('lists').hidden = true;
   const h = new URLSearchParams(location.hash.slice(1));
   $('cLink').value = h.get('link') || store.get('link') || '';
   $('cKey').value = h.get('key') || '';

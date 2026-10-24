@@ -384,6 +384,11 @@ function appRequest_(body) {
         const text = ask_(body.text);
         return { ok: true, result: text, notify: text };
       }
+      case 'lists': return { ok: true, result: getLists_() };
+      case 'listAdd': return { ok: true, result: listAdd_(body.list, body.item) };
+      case 'listSet': return { ok: true, result: listSet_(body.list, body.row, body.changes) };
+      case 'quoteAdd': return { ok: true, result: quoteAdd_(body.quote) };
+      case 'journalAdd': return { ok: true, result: journalAdd_(body.entry) };
       case 'summary': {
         const text = summary_(body.period === 'week' ? 'week' : 'day', new Date());
         return { ok: true, result: text, notify: text };

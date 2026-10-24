@@ -101,6 +101,25 @@
   .chips button { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 999px; padding: 6px 12px; font-size: 13px; }
   .ask { display: flex; gap: 8px; }
   .ask input { flex: 1; min-width: 0; font-size: 16px; padding: 10px 12px; border-radius: 10px; }
+  .views { display: flex; gap: 6px; background: var(--card); border: 1px solid var(--line); padding: 4px; border-radius: 12px; margin-top: 4px; }
+  .views[hidden] { display: none; }
+  .views button { flex: 1; border: 0; background: none; color: var(--muted); padding: 8px; border-radius: 9px; font-weight: 600; }
+  .views button.on { background: var(--accent); color: #fff; }
+  #lists .tabs { margin: 12px 0 0; gap: 2px; }
+  #lists .tabs button { flex: 1 1 0; min-width: 0; padding: 8px 2px; font-size: 13px; }
+  #listNote:empty { display: none; }
+  .stack { display: grid; gap: 8px; }
+  .stack input, .stack textarea { width: 100%; font-size: 16px; padding: 10px 12px; border-radius: 10px; }
+  .stack textarea { min-height: 80px; }
+  .row2 { display: flex; gap: 8px; }
+  .row2 input { flex: 1; min-width: 0; }
+  .stars { display: inline-flex; margin-top: 2px; }
+  .stars button { background: none; border: 0; padding: 0 2px; font-size: 16px; line-height: 1; color: var(--line); }
+  .stars button.on { color: var(--warn); }
+  .rows .right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .quote { font-size: 18px; line-height: 1.5; font-style: italic; }
+  .quote + .sub { margin-top: 8px; }
+  .entry { white-space: pre-wrap; }
   #connect { padding: 24px 0; }
   #connect[hidden] { display: none; }
   #connect p { color: var(--muted); }
@@ -116,6 +135,10 @@
     <button id="next" aria-label="Next month">›</button>
   </div>
 </header>
+<nav class="views" id="views" hidden>
+  <button data-v="money" class="on">Money</button>
+  <button data-v="lists">Lists</button>
+</nav>
 
 <div id="connect" hidden>
   <div class="card">
@@ -178,6 +201,21 @@
   <button class="ghost" id="disconnect" onclick="disconnect()">Disconnect this phone</button>
 </div>
 
+<div id="lists" hidden>
+  <div class="tabs" id="listTabs">
+    <button data-l="books" class="on">Books</button>
+    <button data-l="movies">Movies</button>
+    <button data-l="places">Places</button>
+    <button data-l="quotes">Quotes</button>
+    <button data-l="journal">Journal</button>
+  </div>
+  <div class="card">
+    <form class="stack" id="listForm"></form>
+    <div class="note" id="listNote"></div>
+  </div>
+  <div id="listBody"><div class="empty">Loading…</div></div>
+</div>
+
 <button id="fab" aria-label="Add a transaction" hidden>+</button>
 
 <div id="sheet" hidden>
@@ -236,6 +274,11 @@ const ACTIONS = {
   addManual: entry => ({ action: 'addManual', entry }),
   setEmis: emis => ({ action: 'setEmis', emis }),
   ask: text => ({ action: 'ask', text }),
+  getLists: () => ({ action: 'lists' }),
+  listAdd: (list, item) => ({ action: 'listAdd', list, item }),
+  listSet: (list, row, changes) => ({ action: 'listSet', list, row, changes }),
+  quoteAdd: quote => ({ action: 'quoteAdd', quote }),
+  journalAdd: entry => ({ action: 'journalAdd', entry }),
 };
 function call(link, viewKey, body) {
   return fetch(link, {
@@ -263,6 +306,7 @@ const api = (fn, ...args) => {
 function showConnect() {
   document.querySelector('.month').style.visibility = 'hidden';
   $('msg').hidden = true; $('app').hidden = true; $('fab').hidden = true; $('connect').hidden = false;
+  $('views').hidden = true; $('lists').hidden = true;
   const h = new URLSearchParams(location.hash.slice(1));
   $('cLink').value = h.get('link') || store.get('link') || '';
   $('cKey').value = h.get('key') || '';
@@ -294,7 +338,8 @@ function load() {
     .then(d => {
       all = d.tx.map(t => Object.assign(t, { d: new Date(t.date) }));
       categories = d.categories; incomeCategories = d.incomeCategories; budgets = d.budgets || {}; emis = d.emis || [];
-      $('msg').hidden = true; $('app').hidden = false; $('fab').hidden = false;
+      $('msg').hidden = true;
+      if ($('views').hidden) { $('views').hidden = false; setView(view); }
       render();
     })
     .catch(e => { $('msg').hidden = false; $('msg').textContent = 'Could not load: ' + e.message; });
@@ -535,11 +580,116 @@ function askSky(text) {
   $('askText').value = ''; $('askChips').hidden = true;
   renderChat();
   api('ask', text)
-    .then(r => { reply.text = r; renderChat(); load(); })  // reload: Sky may have changed a category
+    .then(r => { reply.text = r; renderChat(); load(); if (lists) loadLists(); })  // Sky may have changed a category or a list
     .catch(e => { reply.text = 'Sorry, that didn\'t work: ' + e.message; renderChat(); });
 }
 $('askForm').onsubmit = e => { e.preventDefault(); askSky($('askText').value); };
 $('askChips').onclick = e => { if (e.target.dataset.q) askSky(e.target.dataset.q); };
+
+// ----- Lists: books, movies, places, quotes and journal (Assistant.gs) -----
+let lists = null, listTab = 'books', view = 'money';
+const LIST_FORMS = {
+  books: { title: 'Add a book', detail: 'Author' },
+  movies: { title: 'Add a movie or show', detail: 'Year or director' },
+  places: { title: 'Add a place to visit', detail: 'City or country' },
+};
+function setView(v) {
+  view = v;
+  document.querySelectorAll('#views button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  $('app').hidden = v !== 'money'; $('fab').hidden = v !== 'money'; $('lists').hidden = v !== 'lists';
+  document.querySelector('.month').style.visibility = v === 'money' ? '' : 'hidden';
+  if (v === 'lists') { renderListForm(); if (lists) renderLists(); else loadLists(); }
+}
+function loadLists() {
+  return api('getLists').then(d => { lists = d; renderLists(); })
+    .catch(e => { $('listBody').innerHTML = `<div class="empty">Could not load: ${esc(e.message)}</div>`; });
+}
+function listCall(fn, ...args) {
+  $('listNote').className = 'note'; $('listNote').textContent = 'Saving…';
+  return api(fn, ...args).then(d => { lists = d; $('listNote').textContent = ''; renderLists(); return true; })
+    .catch(e => { $('listNote').className = 'note neg'; $('listNote').textContent = e.message; return false; });
+}
+function renderListForm() {
+  document.querySelectorAll('#listTabs button').forEach(b => b.classList.toggle('on', b.dataset.l === listTab));
+  const f = LIST_FORMS[listTab];
+  $('listForm').innerHTML = f
+    ? `<input id="lTitle" type="text" autocomplete="off" placeholder="${f.title}" aria-label="${f.title}">
+       <div class="row2"><input id="lDetail" type="text" autocomplete="off" placeholder="${f.detail} (optional)" aria-label="${f.detail}">
+       <button class="primary" type="submit">Add</button></div>`
+    : listTab === 'quotes'
+    ? `<textarea id="lQuote" placeholder="A quote you liked" aria-label="Quote"></textarea>
+       <div class="row2"><input id="lSource" type="text" placeholder="Book or film" aria-label="Source">
+       <input id="lAuthor" type="text" placeholder="Who said it" aria-label="Author"></div>
+       <div class="actions"><button class="primary" type="submit">Save quote</button></div>`
+    : `<textarea id="lEntry" placeholder="What happened today?" aria-label="Journal entry"></textarea>
+       <div class="actions"><button class="primary" type="submit">Save entry</button></div>`;
+  $('listNote').textContent = '';
+}
+const stars = (row, n) => `<span class="stars" data-row="${row}">${[1, 2, 3, 4, 5].map(i =>
+  `<button data-star="${i}" class="${i <= n ? 'on' : ''}" aria-label="${i} star${i > 1 ? 's' : ''}">★</button>`).join('')}</span>`;
+function renderLists() {
+  if (!lists) return;
+  const body = $('listBody');
+  if (LIST_FORMS[listTab]) {
+    const items = lists[listTab], statuses = lists.statuses[listTab];
+    body.innerHTML = statuses.map(st => {
+      const group = items.filter(it => it.status === st);
+      if (!group.length) return '';
+      const done = st === statuses[statuses.length - 1];
+      return `<div class="card"><h2>${st} · ${group.length}</h2><ul class="rows">${group.map(it => `<li>
+        <div class="left"><div class="name">${esc(it.title)}</div>
+          <div class="meta">${esc([it.detail, it.note].filter(Boolean).join(' · ') || 'Added ' + it.added)}</div>
+          ${done ? stars(it.row, it.rating) : ''}</div>
+        <div class="right"><select data-row="${it.row}" aria-label="Status">${statuses.concat(['Removed']).map(x =>
+          `<option${x === it.status ? ' selected' : ''}>${x === 'Removed' ? 'Remove' : x}</option>`).join('')}</select></div>
+      </li>`).join('')}</ul></div>`;
+    }).join('') || `<div class="card"><div class="empty">Nothing here yet. Add one above, or tell Sky "add … to my ${
+      { books: 'reading list', movies: 'watchlist', places: 'places to visit' }[listTab]}".</div></div>`;
+  } else if (listTab === 'quotes') {
+    const q = lists.quotes;
+    const pick = q.length ? q[Math.floor(Math.random() * q.length)] : null;
+    body.innerHTML = (pick ? `<div class="card"><h2>A quote for you <button class="link" id="nextQuote">Another</button></h2>
+        <div class="quote">“${esc(pick.quote)}”</div><div class="sub">${esc([pick.author, pick.source].filter(Boolean).join(', '))}</div></div>` : '') +
+      `<div class="card"><h2>Saved · ${q.length}</h2><ul class="rows">${q.map(x => `<li><div class="left">
+        <div class="entry">“${esc(x.quote)}”</div><div class="meta">${esc([x.author, x.source].filter(Boolean).join(', '))}</div></div></li>`).join('')
+        || '<li class="empty">No quotes yet</li>'}</ul></div>`;
+    if (pick) $('nextQuote').onclick = renderLists;
+  } else {
+    body.innerHTML = `<div class="card"><h2>Recent entries</h2><ul class="rows">${lists.journal.map(e => `<li><div class="left">
+      <div class="meta">${new Date(e.date.replace(' ', 'T')).toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</div>
+      <div class="entry">${esc(e.entry)}</div></div></li>`).join('') || '<li class="empty">No entries yet</li>'}</ul></div>`;
+  }
+}
+$('views').onclick = e => { if (e.target.dataset.v) setView(e.target.dataset.v); };
+$('listTabs').onclick = e => { if (e.target.dataset.l) { listTab = e.target.dataset.l; renderListForm(); renderLists(); } };
+$('listForm').onsubmit = e => {
+  e.preventDefault();
+  const val = id => ($(id) ? $(id).value.trim() : '');
+  let done;
+  if (LIST_FORMS[listTab]) {
+    if (!val('lTitle')) return;
+    done = listCall('listAdd', listTab, { title: val('lTitle'), detail: val('lDetail'), note: '' });
+  } else if (listTab === 'quotes') {
+    if (!val('lQuote')) return;
+    done = listCall('quoteAdd', { quote: val('lQuote'), source: val('lSource'), author: val('lAuthor') });
+  } else {
+    if (!val('lEntry')) return;
+    done = listCall('journalAdd', val('lEntry'));
+  }
+  done.then(ok => { if (ok) renderListForm(); });
+};
+$('listBody').addEventListener('change', e => {
+  if (e.target.tagName !== 'SELECT') return;
+  const st = e.target.value === 'Remove' ? 'Removed' : e.target.value;
+  listCall('listSet', listTab, Number(e.target.dataset.row), { status: st });
+});
+$('listBody').addEventListener('click', e => {
+  const n = e.target.dataset.star;
+  if (!n) return;
+  const row = Number(e.target.parentNode.dataset.row);
+  const cur = lists[listTab].find(it => it.row === row);
+  listCall('listSet', listTab, row, { rating: cur && cur.rating === Number(n) ? 0 : Number(n) });
+});
 
 $('prev').onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1); render(); };
 $('next').onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1); render(); };
