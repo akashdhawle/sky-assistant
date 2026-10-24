@@ -293,7 +293,7 @@ In your repository on GitHub: **Settings → Secrets and variables → Actions �
 | `DEPLOYMENT_ID` | the part of your receive link between `/s/` and `/exec` (it starts with `AKfycb`) |
 
 ### 4. Try it
-On GitHub, open **Actions → Deploy to Apps Script → Run workflow**. A green tick means it worked; Apps Script's **Manage deployments** shows a new version described "GitHub …". A red cross shows the reason when you open it; send it to Sky's builder.
+On GitHub, open **Actions → Deploy to Apps Script → Run workflow**. A green tick means it worked; Apps Script's **Manage deployments** shows a new version described "GitHub …". A red cross shows the reason when you open it.
 
 ### Good to know
 - Your settings (Script properties such as `GEMINI_API_KEY`) and any extra files you made in Apps Script are kept; only `Code`, `Dashboard` and `Assistant` are replaced.
