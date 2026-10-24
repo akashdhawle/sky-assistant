@@ -658,7 +658,9 @@ function say(text) {
     speechSynthesis.speak(u);
   });
 }
-function listen() {
+// iPhone only lets the mic start from a tap. Later rounds start it right after Sky speaks; if the phone
+// refuses that, the conversation waits for a tap instead of giving up.
+function listen(fromTap) {
   if (!talking) return;
   recog = new Recognition();
   recog.lang = 'en-IN'; recog.interimResults = true; recog.maxAlternatives = 1;
@@ -669,7 +671,8 @@ function listen() {
   };
   recog.onerror = e => {
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-      setTalking(false); talkState('Microphone blocked. Allow it for this app in Settings, then tap 🎤 again.');
+      setTalking(false);
+      talkState(fromTap ? 'Microphone blocked. Allow it for this app in Settings, then tap 🎤 again.' : 'Tap 🎤 to reply.');
     }
   };
   recog.onend = () => {
@@ -684,7 +687,7 @@ function listen() {
     });
   };
   try { recog.start(); talkState('Listening… say "thanks" when you\'re done'); }
-  catch (e) { setTalking(false); talkState('Tap 🎤 to talk again.'); }
+  catch (e) { setTalking(false); talkState(fromTap ? 'Tap 🎤 to talk again.' : 'Tap 🎤 to reply.'); }
 }
 if (window.speechSynthesis) {
   renderVoices();
@@ -698,11 +701,12 @@ if (Recognition) {
   $('talk').hidden = false;
   $('talk').onclick = () => {
     if (talking) { setTalking(false); return; }
-    // iPhone only lets a page speak after a tap, so the greeting is spoken right away, which unlocks the voice.
+    // The mic has to start inside the tap, so the greeting is shown rather than spoken (Sky would hear itself).
+    // A silent utterance in the same tap unlocks the voice for the answers.
     setTalking(true);
-    talkState('Speaking…');
-    say(ownerName ? greeting() + '. What can I do for you?' : 'Hi! What can I do for you?')
-      .then(() => { if (talking) listen(); });
+    if (window.speechSynthesis) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); }
+    listen(true);
+    if (talking) talkState((ownerName ? greeting() + '. ' : '') + 'Listening… say "thanks" when you\'re done');
   };
 }
 $('askForm').onsubmit = e => { e.preventDefault(); askSky($('askText').value); };
