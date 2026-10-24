@@ -1,18 +1,22 @@
 /**
- * Sky assistant — answers "Ask Sky" questions with Claude and the tools below.
+ * Sky assistant — answers "Ask Sky" questions with an AI model and the tools below.
  *
  * The Ask Sky shortcut and the app's Ask Sky box post {action: 'ask', viewKey, text} to doPost
  * (see appRequest_ in Code.gs); the dashboard calls ask() directly.
- * Claude decides which tool to call; the tools run here, on your own sheet. The reply is short
+ * The model decides which tool to call; the tools run here, on your own sheet. The reply is short
  * plain text, because the shortcut speaks it aloud.
  *
- * One-time: in Apps Script, Project Settings → Script properties, add CLAUDE_API_KEY.
- * Optional properties: CLAUDE_MODEL (everyday questions, default Haiku) and
- * CLAUDE_REVIEW_MODEL (when you ask Sky to review your categories, default Sonnet).
+ * Two providers work: Google Gemini (free tier) and Claude. In Apps Script, Project Settings →
+ * Script properties, add GEMINI_API_KEY or CLAUDE_API_KEY. With both, Gemini is used unless
+ * AI_PROVIDER is set to claude.
+ * Optional properties: GEMINI_MODEL (default Gemini Flash), CLAUDE_MODEL (everyday questions,
+ * default Haiku) and CLAUDE_REVIEW_MODEL (when you ask Sky to review your categories, default Sonnet).
  */
 
 const SHEET_CHANGES = 'ChangeLog';
 const CLAUDE_URL = 'https://api.anthropic.com/v1/messages';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 const DEFAULT_MODEL = 'claude-haiku-5-5';
 const DEFAULT_REVIEW_MODEL = 'claude-sonnet-5-5';
 const MAX_TOOL_ROUNDS = 6;
@@ -120,37 +124,73 @@ function ask_(text) {
   const question = String(text || '').trim().slice(0, 2000);
   if (!question) return 'I didn\'t catch that. Try again?';
   const props = PropertiesService.getScriptProperties();
-  const apiKey = props.getProperty('CLAUDE_API_KEY');
-  if (!apiKey) return 'Sky needs a Claude API key first. Add CLAUDE_API_KEY in the script\'s properties.';
+  const provider = aiProvider_(props);
+  const p = PROVIDERS[provider];
+  const apiKey = props.getProperty(p.keyName);
+  if (!apiKey) return 'Sky needs an API key first. Add GEMINI_API_KEY or CLAUDE_API_KEY in the script\'s properties.';
 
   const isReview = /\b(review|check|go through)\b.*\bcategor/i.test(question);
-  const model = isReview ? (props.getProperty('CLAUDE_REVIEW_MODEL') || DEFAULT_REVIEW_MODEL)
+  const model = provider === 'gemini' ? (props.getProperty('GEMINI_MODEL') || DEFAULT_GEMINI_MODEL)
+    : isReview ? (props.getProperty('CLAUDE_REVIEW_MODEL') || DEFAULT_REVIEW_MODEL)
     : (props.getProperty('CLAUDE_MODEL') || DEFAULT_MODEL);
 
   const cache = CacheService.getScriptCache();
   let messages = loadHistory_(cache, model);
   const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "EEEE d MMMM yyyy, HH:mm");
-  messages.push({ role: 'user', content: '[Now: ' + now + ']\n' + question });
+  messages.push(p.userMessage('[Now: ' + now + ']\n' + question));
 
-  let reply = '';
+  let reply = '', finished = false;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const res = callClaude_(apiKey, model, messages);
-    messages.push({ role: 'assistant', content: res.content });
-    if (res.stop_reason === 'refusal') {
+    const turn = p.call(apiKey, model, messages);
+    if (turn.message) messages.push(turn.message);
+    if (turn.refused) {
       reply = 'Sorry, I can\'t help with that one.';
       break;
     }
-    reply = res.content.filter(b => b.type === 'text').map(b => b.text).join(' ').trim() || reply;
-    if (res.stop_reason !== 'tool_use') break;
-    const results = res.content.filter(b => b.type === 'tool_use').map(b => runTool_(b));
-    messages.push({ role: 'user', content: results });
+    reply = turn.text || reply;
+    if (!turn.calls.length) {
+      finished = true;
+      break;
+    }
+    messages.push(p.resultsMessage(turn.calls.map(c => runTool_(c))));
   }
 
   // Only a finished exchange is kept for follow-ups ("move it to Gifts").
-  if (messages[messages.length - 1].role === 'assistant') saveHistory_(cache, model, messages);
+  if (finished) saveHistory_(cache, model, messages);
   else cache.remove(HISTORY_KEY);
   return reply || 'Sorry, something went wrong. Try asking again.';
 }
+
+/** gemini or claude: AI_PROVIDER if set, otherwise whichever key is there (Gemini first). */
+function aiProvider_(props) {
+  const chosen = String(props.getProperty('AI_PROVIDER') || '').trim().toLowerCase();
+  if (PROVIDERS[chosen]) return chosen;
+  return props.getProperty('GEMINI_API_KEY') ? 'gemini' : 'claude';
+}
+
+// Each provider keeps history in its own message format and returns one turn as
+// {message, text, calls: [{id, name, input}], refused}.
+const PROVIDERS = {
+  claude: {
+    keyName: 'CLAUDE_API_KEY',
+    userMessage: text => ({ role: 'user', content: text }),
+    call: callClaude_,
+    resultsMessage: results => ({
+      role: 'user',
+      content: results.map(r => ({ type: 'tool_result', tool_use_id: r.id, content: JSON.stringify(r.out), is_error: r.isError })),
+    }),
+  },
+  gemini: {
+    keyName: 'GEMINI_API_KEY',
+    userMessage: text => ({ role: 'user', parts: [{ text: text }] }),
+    call: callGemini_,
+    resultsMessage: results => ({
+      role: 'user',
+      parts: results.map(r => ({ functionResponse: Object.assign(
+        { name: r.name, response: r.isError ? { error: r.out.error } : { result: r.out } }, r.id ? { id: r.id } : {}) })),
+    }),
+  },
+};
 
 function callClaude_(apiKey, model, messages) {
   const body = {
@@ -178,7 +218,52 @@ function callClaude_(apiKey, model, messages) {
     const msg = (data.error && data.error.message) || ('HTTP ' + code);
     throw new Error(code === 401 ? 'Claude API key was rejected' : 'Claude: ' + msg);
   }
-  return data;
+  const content = data.content || [];
+  return {
+    message: { role: 'assistant', content: content },
+    text: content.filter(b => b.type === 'text').map(b => b.text).join(' ').trim(),
+    calls: data.stop_reason === 'tool_use' ? content.filter(b => b.type === 'tool_use') : [],
+    refused: data.stop_reason === 'refusal',
+  };
+}
+
+function callGemini_(apiKey, model, contents) {
+  const body = {
+    systemInstruction: { parts: [{ text: ASK_SYSTEM }] },
+    contents: contents,
+    tools: [{ functionDeclarations: ASK_TOOLS.map(geminiTool_) }],
+  };
+  const resp = UrlFetchApp.fetch(GEMINI_URL + encodeURIComponent(model) + ':generateContent', {
+    method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': apiKey },
+    payload: JSON.stringify(body), muteHttpExceptions: true,
+  });
+  const code = resp.getResponseCode();
+  const data = JSON.parse(resp.getContentText() || '{}');
+  if (code !== 200) {
+    const msg = (data.error && data.error.message) || ('HTTP ' + code);
+    if (code === 429) throw new Error('Gemini\'s free daily limit is used up. Try again later');
+    throw new Error(/API key/i.test(msg) ? 'Gemini API key was rejected' : 'Gemini: ' + msg);
+  }
+  const cand = (data.candidates || [])[0];
+  if (!cand || !cand.content) return { message: null, text: '', calls: [], refused: true };
+  const parts = cand.content.parts || [];
+  return {
+    // The model's turn goes back unchanged: its parts can carry thought signatures that Gemini checks.
+    message: { role: 'model', parts: parts },
+    text: parts.filter(x => typeof x.text === 'string' && !x.thought).map(x => x.text).join(' ').trim(),
+    calls: parts.filter(x => x.functionCall).map(x => ({ id: x.functionCall.id, name: x.functionCall.name, input: x.functionCall.args || {} })),
+    refused: /SAFETY|PROHIBITED|BLOCKLIST|SPII/.test(cand.finishReason || ''),
+  };
+}
+
+/** A Claude tool definition in Gemini's format, which has no additionalProperties and no empty objects. */
+function geminiTool_(tool) {
+  const schema = tool.input_schema;
+  const decl = { name: tool.name, description: tool.description };
+  if (Object.keys(schema.properties).length) {
+    decl.parameters = { type: 'object', properties: schema.properties, required: schema.required };
+  }
+  return decl;
 }
 
 /** The previous exchange, if it was recent and used the same model (thinking blocks belong to one model). */
@@ -193,28 +278,29 @@ function loadHistory_(cache, model) {
 
 function saveHistory_(cache, model, messages) {
   const json = JSON.stringify({ model: model, messages: messages });
-  // History is never trimmed (that would change what Claude already saw); a long one starts over instead.
+  // History is never trimmed (that would change what the model already saw); a long one starts over instead.
   if (json.length > HISTORY_MAX_CHARS) cache.remove(HISTORY_KEY);
   else cache.put(HISTORY_KEY, json, HISTORY_SECONDS);
 }
 
-function runTool_(block) {
+/** Runs one tool call: {id, name, input} → {id, name, out, isError}. */
+function runTool_(call) {
   let out, isError = false;
   try {
-    const input = block.input || {};
-    switch (block.name) {
+    const input = call.input || {};
+    switch (call.name) {
       case 'spending_summary': out = toolSummary_(input.period, new Date()); break;
       case 'find_transactions': out = toolFind_(input); break;
       case 'set_category': out = toolSetCategory_(input.row, input.category, input.remember_rule); break;
       case 'review_categories': out = toolReview_(input.period, new Date()); break;
       case 'undo_last_change': out = toolUndo_(); break;
-      default: throw new Error('Unknown tool ' + block.name);
+      default: throw new Error('Unknown tool ' + call.name);
     }
   } catch (err) {
     out = { error: err.message };
     isError = true;
   }
-  return { type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(out), is_error: isError };
+  return { id: call.id, name: call.name, out: out, isError: isError };
 }
 
 // ---------- tools ----------
