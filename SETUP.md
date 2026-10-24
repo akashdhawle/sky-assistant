@@ -238,13 +238,16 @@ To change models, add the script properties `GEMINI_MODEL` (default `gemini-3.5-
 
 ## Update 7: Lists, quotes and journal (about 5 minutes)
 
-Sky now keeps your reading list, watchlist, places to visit, favourite quotes and a journal, all by voice or in the Ask Sky box.
+Sky now keeps your reading list, watchlist, places to visit, favourite quotes and a journal, by voice, in the Ask Sky box, or on the app's new **Lists** screen.
 
 ### On your computer
-1. In Apps Script, clear `Assistant` and paste the new `apps-script/Assistant.gs`. Press **Ctrl+S**.
+1. In Apps Script, clear `Code.gs`, `Dashboard` and `Assistant` and paste the new ones (`apps-script/Code.gs`, `apps-script/Dashboard.html`, `apps-script/Assistant.gs`). Press **Ctrl+S**.
 2. **Deploy → Manage deployments**, ✏️ → **New version** → **Deploy**.
 
-Nothing changes on your iPhone: the same Ask Sky shortcut and app box handle it all. Sky creates the **Books**, **Movies**, **Places**, **Quotes** and **Journal** tabs the first time you use each one, and you can edit them in the sheet any time.
+Nothing changes in the Ask Sky shortcut. The installed app picks up the new Lists screen by itself; close and reopen it once.
+
+### In the app
+Tap **Lists** at the top. Each tab (Books, Movies, Places, Quotes, Journal) has a box to add to it. Change an item's status with its menu, and tap the stars on finished books, watched movies and visited places to rate them. Quotes shows a random one each time; tap **Another** for a new one. Sky creates the **Books**, **Movies**, **Places**, **Quotes** and **Journal** tabs the first time you use each one, and you can edit them in the sheet any time.
 
 ### Try
 - "Add Atomic Habits to my TBR", "What's on my reading list?", "I finished Deep Work, 4 stars", "What should I read next?"

@@ -692,3 +692,71 @@ function toolJournalRead_(q) {
   return { total: hits.length, entries: hits.slice(0, limit).map(r => ({
     date: Utilities.formatDate(new Date(r[0]), tz, 'yyyy-MM-dd HH:mm'), entry: String(r[1]) })) };
 }
+
+// ---------- the app's Lists screen ----------
+// The dashboard calls these directly; the installable app goes through appRequest_ in Code.gs.
+// Each change returns every list again, so the screen redraws from one call.
+
+function getLists() {
+  if (!isOwner_()) throw new Error('Not allowed');
+  return getLists_();
+}
+function listAdd(list, item) {
+  if (!isOwner_()) throw new Error('Not allowed');
+  return listAdd_(list, item);
+}
+function listSet(list, row, changes) {
+  if (!isOwner_()) throw new Error('Not allowed');
+  return listSet_(list, row, changes);
+}
+function quoteAdd(quote) {
+  if (!isOwner_()) throw new Error('Not allowed');
+  return quoteAdd_(quote);
+}
+function journalAdd(entry) {
+  if (!isOwner_()) throw new Error('Not allowed');
+  return journalAdd_(entry);
+}
+
+function getLists_() {
+  const out = { statuses: {} };
+  Object.keys(LISTS).forEach(k => {
+    out.statuses[k] = LISTS[k].statuses;
+    out[k] = listItems_(k).items.filter(it => it.status !== 'Removed').reverse()
+      .map(it => Object.assign({ row: it.row }, shortItem_(it)));
+  });
+  out.quotes = quotes_().quotes.reverse();
+  out.journal = toolJournalRead_({ from_date: '', to_date: '', search: '', limit: 10 }).entries;
+  return out;
+}
+
+function listAdd_(list, item) {
+  item = item || {};
+  toolListAdd_({ list: list, title: item.title, detail: item.detail, note: item.note });
+  return getLists_();
+}
+
+/** Sets status and/or rating (0 clears it) on one row, from the app. */
+function listSet_(list, row, changes) {
+  const cfg = listCfg_(list);
+  const it = listItems_(list).items.find(x => x.row === Number(row));
+  if (!it) throw new Error('That item is gone; pull to refresh');
+  changes = changes || {};
+  const status = changes.status || it.status;
+  if (status !== 'Removed' && cfg.statuses.indexOf(status) === -1) throw new Error('Unknown status ' + status);
+  const rating = 'rating' in changes ? Math.round(Number(changes.rating) || 0) : it.rating;
+  if (rating < 0 || rating > 5) throw new Error('Rating is 1 to 5');
+  const sheet = ss_().getSheetByName(cfg.sheet);
+  sheet.getRange(it.row, 4, 1, 2).setValues([[status, rating || '']]);
+  return getLists_();
+}
+
+function quoteAdd_(quote) {
+  toolQuoteSave_(quote || {});
+  return getLists_();
+}
+
+function journalAdd_(entry) {
+  toolJournalAdd_(entry);
+  return getLists_();
+}
