@@ -190,19 +190,20 @@ Open **Expenses**, find the **EMIs** card, tap **Edit**, and add each loan with 
 
 ## Update 6: Ask Sky, the voice assistant (about 15 minutes)
 
-Ask about your spending out loud, and fix categories by voice: "Hey Siri, Ask Sky… how much did I spend on food this month?" or "the Swiggy one on 21 October was a gift". Sky uses Claude to understand you and answers through Siri.
+Ask about your spending out loud, and fix categories by voice: "Hey Siri, Ask Sky… how much did I spend on food this month?" or "the Swiggy one on 21 October was a gift". Sky uses an AI model to understand you and answers through Siri.
 
-### A Claude API key (once)
-1. Go to **console.anthropic.com**, sign in, and open **Billing**. Add a small amount of credit, for example $5.
-2. On the Console's limits page, set a monthly spend limit, for example $10. Sky stops answering if it's reached and never charges more.
-3. Open **API keys → Create key**, name it `Sky`, and copy the key. You only see it once.
+Sky works with **Google Gemini**, which is free, or **Claude**, which costs about ₹40 a month. Start with Gemini; you can switch any time (see *Switching to Claude* below).
 
-Each question costs well under ₹1: everyday questions use Claude Haiku, and only "review my categories" uses the stronger Claude Sonnet.
+### A free Gemini API key (once)
+1. Go to **aistudio.google.com**, sign in with your Google account, and click **Get API key → Create API key**.
+2. Copy the key. No card is needed, and you stay on the free tier as long as you don't turn on billing.
+
+On the free tier, Google may use what Sky sends (your question and the transactions it looks up) to improve its products. There's also a daily limit; if you reach it, Sky says so and works again the next day.
 
 ### On your computer
-1. In Apps Script, clear `Code.gs` and `Dashboard` and paste the new ones, as before. Then click **+ → Script**, name it `Assistant`, and paste `apps-script/Assistant.gs` into it. Press **Ctrl+S**.
-2. **⚙ Project Settings → Script properties → Add script property**: name `CLAUDE_API_KEY`, value your key. **Save**. The key stays in your script and is never in the app, the shortcut or GitHub.
-3. **Deploy → Manage deployments**, pick the deployment your shortcut and app use, ✏️ → **New version** → **Deploy**. Approve the new permission if Google asks: the script now connects to Claude's servers.
+1. In Apps Script, clear `Code.gs` and `Dashboard` and paste the new ones, as before. Then click **+ → Script**, name it `Assistant`, and paste `apps-script/Assistant.gs` into it. (If you already have `Assistant`, clear it and paste the new one.) Press **Ctrl+S**.
+2. **⚙ Project Settings → Script properties → Add script property**: name `GEMINI_API_KEY`, value your key. **Save**. The key stays in your script and is never in the app, the shortcut or GitHub.
+3. **Deploy → Manage deployments**, pick the deployment your shortcut and app use, ✏️ → **New version** → **Deploy**. Approve the new permission if Google asks: the script now connects to the AI's servers.
 
 ### On your iPhone: the Ask Sky shortcut
 1. **Shortcuts tab → +**, name it **Ask Sky**. Siri will run it when you say "Hey Siri, Ask Sky".
@@ -220,5 +221,12 @@ Try: "How much did I spend this week?", "What did I pay Amazon this month?", "Th
 - Sky only reads your sheet through a few actions: spending totals, searching transactions, changing a category, reviewing categories, and undo. It can't add, delete or edit amounts.
 - Every category change is logged in a new **ChangeLog** tab with the old and new category, so "undo that" (or you, in the sheet) can put it back. Sky changes at most 3 transactions at a time without asking you first.
 - A follow-up within 30 minutes continues the same conversation, so "move it to Gifts" knows what "it" is.
-- To change the models, add the script properties `CLAUDE_MODEL` (everyday, default `claude-haiku-5-5`) or `CLAUDE_REVIEW_MODEL` (reviews, default `claude-sonnet-5-5`).
-- When you ask, Sky sends Claude your question and the transactions it looks up (date, merchant, amount, category). Anthropic doesn't use API data to train its models by default.
+- When you ask, Sky sends the AI your question and the transactions it looks up (date, merchant, amount, category).
+
+### Switching to Claude
+Claude keeps your data private (Anthropic doesn't train on API data by default) and uses Claude Sonnet for "review my categories". It costs well under ₹1 a question, about ₹40 a month.
+1. Go to **console.anthropic.com**, open **Billing** and add a small amount of credit, for example $5. On the limits page, set a monthly spend limit, for example $10, so it never charges more.
+2. Open **API keys → Create key**, name it `Sky`, and copy it.
+3. In **Script properties**, add `CLAUDE_API_KEY` with your key, and add `AI_PROVIDER` with the value `claude`. No new deployment is needed. To go back to Gemini, delete `AI_PROVIDER`.
+
+To change models, add the script properties `GEMINI_MODEL` (default `gemini-3.8-flash`), `CLAUDE_MODEL` (everyday, default `claude-haiku-5-5`) or `CLAUDE_REVIEW_MODEL` (reviews, default `claude-sonnet-5-5`).
