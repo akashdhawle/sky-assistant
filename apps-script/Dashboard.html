@@ -100,6 +100,9 @@
   #hello { text-transform: none; letter-spacing: 0; font-size: 18px; color: var(--text); }
   #talkState { font-size: 13px; color: var(--muted); margin-top: 8px; }
   #talkState:empty { display: none; }
+  .voice { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .voice[hidden] { display: none; }
+  .voice select { flex: 1; min-width: 0; font-size: 13px; padding: 4px 6px; border-radius: 8px; }
   .views { display: flex; gap: 6px; background: var(--card); border: 1px solid var(--line); padding: 4px; border-radius: 12px; margin-top: 4px; }
   .views[hidden] { display: none; }
   .views button { flex: 1; border: 0; background: none; color: var(--muted); padding: 8px; border-radius: 9px; font-weight: 600; }
@@ -153,6 +156,7 @@
       <button class="primary" type="submit">Ask</button>
     </form>
     <div id="talkState" aria-live="polite"></div>
+    <label class="voice" id="voiceRow" hidden>Voice <select id="voice"></select></label>
   </div>
 
   <div class="card">
@@ -523,16 +527,46 @@ function setTalking(on) {
     if (window.speechSynthesis) speechSynthesis.cancel();
   }
 }
+// Phones come with many voices. Prefer the natural ones (Premium, Enhanced, Google), Indian English first,
+// and skip the novelty voices. The chosen voice is remembered on this phone.
+const NOVELTY = /albert|bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|fred|junior|ralph|kathy|grandma|grandpa|eddy|flo|reed|rocko|sandy|shelley/i;
+function voices() {
+  const score = v => (/premium/i.test(v.name) ? 4 : /enhanced|neural|natural/i.test(v.name) ? 3 : /google/i.test(v.name) ? 2 : 0)
+    + (/^en[-_]IN/i.test(v.lang) ? 1.5 : 0) - (v.localService === false ? 0.5 : 0);
+  return (window.speechSynthesis ? speechSynthesis.getVoices() : [])
+    .filter(v => /^en/i.test(v.lang) && !NOVELTY.test(v.name))
+    .sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name));
+}
+function savedVoice() { try { return localStorage.getItem('skyVoice') || ''; } catch (e) { return ''; } }
+function pickVoice() {
+  const list = voices(), want = savedVoice();
+  return list.find(v => v.voiceURI === want) || list[0] || null;
+}
+function renderVoices() {
+  const list = voices(), cur = pickVoice();
+  if (!list.length || !Recognition) return;
+  $('voice').innerHTML = list.map(v =>
+    `<option value="${esc(v.voiceURI)}"${cur && v.voiceURI === cur.voiceURI ? ' selected' : ''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('');
+  $('voiceRow').hidden = false;
+}
+// Read the reply the way a person would say it: no markdown symbols, and "rupees" for ₹.
+function speakable(text) {
+  return text.replace(/[*_#`>|]+/g, ' ').replace(/^\s*[-•]\s+/gm, '').replace(/₹\s?([\d,]+(?:\.\d+)?)/g, '$1 rupees').replace(/₹/g, 'rupees ')
+    .replace(/\bvs\.?\b/gi, 'versus').replace(/\s+/g, ' ').trim();
+}
 function say(text) {
   return new Promise(done => {
     if (!window.speechSynthesis || !text) return done();
-    const u = new SpeechSynthesisUtterance(text.replace(/₹/g, 'rupees '));
-    u.lang = 'en-IN';
+    const u = new SpeechSynthesisUtterance(speakable(text));
+    const v = pickVoice();
+    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-IN';
     u.onend = u.onerror = () => done();
     speechSynthesis.speak(u);
   });
 }
-function listen() {
+// iPhone only lets the mic start from a tap. Later rounds start it right after Sky speaks; if the phone
+// refuses that, the conversation waits for a tap instead of giving up.
+function listen(fromTap) {
   if (!talking) return;
   recog = new Recognition();
   recog.lang = 'en-IN'; recog.interimResults = true; recog.maxAlternatives = 1;
@@ -543,7 +577,8 @@ function listen() {
   };
   recog.onerror = e => {
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-      setTalking(false); talkState('Microphone blocked. Allow it for this app in Settings, then tap 🎤 again.');
+      setTalking(false);
+      talkState(fromTap ? 'Microphone blocked. Allow it for this app in Settings, then tap 🎤 again.' : 'Tap 🎤 to reply.');
     }
   };
   recog.onend = () => {
@@ -558,17 +593,26 @@ function listen() {
     });
   };
   try { recog.start(); talkState('Listening… say "thanks" when you\'re done'); }
-  catch (e) { setTalking(false); talkState('Tap 🎤 to talk again.'); }
+  catch (e) { setTalking(false); talkState(fromTap ? 'Tap 🎤 to talk again.' : 'Tap 🎤 to reply.'); }
+}
+if (window.speechSynthesis) {
+  renderVoices();
+  speechSynthesis.addEventListener('voiceschanged', renderVoices);
+  $('voice').onchange = () => {
+    try { localStorage.setItem('skyVoice', $('voice').value); } catch (e) {}
+    if (!talking) { speechSynthesis.cancel(); say(ownerName ? 'Hi ' + ownerName + ', this is my new voice.' : 'Hi, this is my new voice.'); }
+  };
 }
 if (Recognition) {
   $('talk').hidden = false;
   $('talk').onclick = () => {
     if (talking) { setTalking(false); return; }
-    // iPhone only lets a page speak after a tap, so the greeting is spoken right away, which unlocks the voice.
+    // The mic has to start inside the tap, so the greeting is shown rather than spoken (Sky would hear itself).
+    // A silent utterance in the same tap unlocks the voice for the answers.
     setTalking(true);
-    talkState('Speaking…');
-    say(ownerName ? greeting() + '. What can I do for you?' : 'Hi! What can I do for you?')
-      .then(() => { if (talking) listen(); });
+    if (window.speechSynthesis) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); }
+    listen(true);
+    if (talking) talkState((ownerName ? greeting() + '. ' : '') + 'Listening… say "thanks" when you\'re done');
   };
 }
 $('askForm').onsubmit = e => { e.preventDefault(); askSky($('askText').value); };
