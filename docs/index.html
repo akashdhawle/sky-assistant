@@ -101,6 +101,12 @@
   .chips button { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 999px; padding: 6px 12px; font-size: 13px; }
   .ask { display: flex; gap: 8px; }
   .ask input { flex: 1; min-width: 0; font-size: 16px; padding: 10px 12px; border-radius: 10px; }
+  .mic { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 10px; padding: 0 12px; font-size: 18px; }
+  .mic[hidden] { display: none; }
+  .mic.on { background: var(--bad); border-color: var(--bad); color: #fff; animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .65; } }
+  #talkState { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  #talkState:empty { display: none; }
   .views { display: flex; gap: 6px; background: var(--card); border: 1px solid var(--line); padding: 4px; border-radius: 12px; margin-top: 4px; }
   .views[hidden] { display: none; }
   .views button { flex: 1; border: 0; background: none; color: var(--muted); padding: 8px; border-radius: 9px; font-weight: 600; }
@@ -167,8 +173,10 @@
     <form class="ask" id="askForm">
       <input id="askText" type="text" autocomplete="off" enterkeyhint="send" aria-label="Ask Sky"
              placeholder="Ask, or tell Sky what to fix">
+      <button class="mic" type="button" id="talk" aria-label="Talk to Sky" hidden>🎤</button>
       <button class="primary" type="submit">Ask</button>
     </form>
+    <div id="talkState" aria-live="polite"></div>
   </div>
 
   <div class="card">
@@ -572,16 +580,80 @@ function renderChat() {
   $('chat').hidden = !chat.length;
   $('chat').scrollTop = $('chat').scrollHeight;
 }
+/** Sends one question; resolves with Sky's reply text (or the error, worded for speaking). */
 function askSky(text) {
   text = text.trim();
-  if (!text) return;
+  if (!text) return Promise.resolve('');
   const reply = { who: 'sky', text: '…' };
   chat.push({ who: 'me', text }, reply);
   $('askText').value = ''; $('askChips').hidden = true;
   renderChat();
-  api('ask', text)
-    .then(r => { reply.text = r; renderChat(); load(); if (lists) loadLists(); })  // Sky may have changed a category or a list
-    .catch(e => { reply.text = 'Sorry, that didn\'t work: ' + e.message; renderChat(); });
+  return api('ask', text)
+    .then(r => { reply.text = r; renderChat(); load(); if (lists) loadLists(); return r; })  // Sky may have changed a category or a list
+    .catch(e => { reply.text = 'Sorry, that didn\'t work: ' + e.message; renderChat(); return reply.text; });
+}
+
+// ----- Talk mode: listen, ask, speak the answer, listen again -----
+// Uses the browser's own speech recognition and voice, so it costs nothing extra.
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const STOP_WORDS = /^(stop|thanks|thank you|bye|goodbye|that'?s all|that is all|ok bye)\b/i;
+let talking = false, recog = null;
+function talkState(t) { $('talkState').textContent = t; }
+function setTalking(on) {
+  talking = on;
+  $('talk').classList.toggle('on', on);
+  $('talk').setAttribute('aria-label', on ? 'Stop talking' : 'Talk to Sky');
+  if (!on) {
+    talkState('');
+    if (recog) { try { recog.abort(); } catch (e) {} }
+    if (window.speechSynthesis) speechSynthesis.cancel();
+  }
+}
+function say(text) {
+  return new Promise(done => {
+    if (!window.speechSynthesis || !text) return done();
+    const u = new SpeechSynthesisUtterance(text.replace(/₹/g, 'rupees '));
+    u.lang = 'en-IN';
+    u.onend = u.onerror = () => done();
+    speechSynthesis.speak(u);
+  });
+}
+function listen() {
+  if (!talking) return;
+  recog = new Recognition();
+  recog.lang = 'en-IN'; recog.interimResults = true; recog.maxAlternatives = 1;
+  let heard = '';
+  recog.onresult = e => {
+    heard = [...e.results].map(r => r[0].transcript).join(' ').trim();
+    $('askText').value = heard;
+  };
+  recog.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      setTalking(false); talkState('Microphone blocked. Allow it for this app in Settings, then tap 🎤 again.');
+    }
+  };
+  recog.onend = () => {
+    if (!talking) return;
+    if (!heard) { setTalking(false); return; }  // silence ends the conversation
+    if (STOP_WORDS.test(heard)) { $('askText').value = ''; setTalking(false); say('Bye!'); return; }
+    talkState('Thinking…');
+    askSky(heard).then(reply => {
+      if (!talking) return;
+      talkState('Speaking… tap 🎤 to stop');
+      return say(reply).then(() => { if (talking) { talkState('Listening…'); listen(); } });
+    });
+  };
+  try { recog.start(); talkState('Listening… say "thanks" when you\'re done'); }
+  catch (e) { setTalking(false); talkState('Tap 🎤 to talk again.'); }
+}
+if (Recognition) {
+  $('talk').hidden = false;
+  $('talk').onclick = () => {
+    if (talking) { setTalking(false); return; }
+    // iPhone only lets a page speak after a tap, so unlock the voice now.
+    if (window.speechSynthesis) speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+    setTalking(true); listen();
+  };
 }
 $('askForm').onsubmit = e => { e.preventDefault(); askSky($('askText').value); };
 $('askChips').onclick = e => { if (e.target.dataset.q) askSky(e.target.dataset.q); };
