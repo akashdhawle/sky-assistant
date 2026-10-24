@@ -200,7 +200,7 @@ Ask about your spending out loud, and fix categories by voice: "Hey Siri, Ask Sk
 Each question costs well under ₹1: everyday questions use Claude Haiku, and only "review my categories" uses the stronger Claude Sonnet.
 
 ### On your computer
-1. In Apps Script, clear `Code.gs` and paste the new one, as before. Then click **+ → Script**, name it `Assistant`, and paste `apps-script/Assistant.gs` into it. Press **Ctrl+S**.
+1. In Apps Script, clear `Code.gs` and `Dashboard` and paste the new ones, as before. Then click **+ → Script**, name it `Assistant`, and paste `apps-script/Assistant.gs` into it. Press **Ctrl+S**.
 2. **⚙ Project Settings → Script properties → Add script property**: name `CLAUDE_API_KEY`, value your key. **Save**. The key stays in your script and is never in the app, the shortcut or GitHub.
 3. **Deploy → Manage deployments**, pick the deployment your shortcut and app use, ✏️ → **New version** → **Deploy**. Approve the new permission if Google asks: the script now connects to Claude's servers.
 
@@ -210,6 +210,9 @@ Each question costs well under ₹1: everyday questions use Claude Haiku, and on
 3. **Get contents of URL**: your receive link, **Method POST**, **Request Body JSON** with three Text fields: `viewKey` → your View key, `action` → `ask`, `text` → **Dictated Text**.
 4. **Get Dictionary Value**: *Value* for `notify` in **Contents of URL**.
 5. **Speak Text**: **Dictionary Value**. Add **Show Result** with **Dictionary Value** too if you'd like to see it on screen.
+
+### In the app
+After you paste the new `Dashboard` too and deploy, the **Ask Sky** box sits at the top of the Expenses app. Type a question, or tap the microphone on your keyboard to speak it. It's the same assistant as the shortcut, so it works on Android phones as well. If you use the installed app, open it once after deploying so it picks up the new version.
 
 Try: "How much did I spend this week?", "What did I pay Amazon this month?", "The Swiggy one on 21 October was a gift", "Check my categories for this month", "Undo that".
 

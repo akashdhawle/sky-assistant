@@ -91,6 +91,16 @@
   textarea { min-height: 110px; resize: vertical; }
   .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
   .note { font-size: 13px; margin-top: 8px; min-height: 18px; }
+  .chat { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; margin-bottom: 10px; }
+  .chat[hidden] { display: none; }
+  .bubble { padding: 8px 12px; border-radius: 14px; max-width: 85%; white-space: pre-wrap; }
+  .bubble.me { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .bubble.sky { align-self: flex-start; background: var(--bg); border-bottom-left-radius: 4px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .chips[hidden] { display: none; }
+  .chips button { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 999px; padding: 6px 12px; font-size: 13px; }
+  .ask { display: flex; gap: 8px; }
+  .ask input { flex: 1; min-width: 0; font-size: 16px; padding: 10px 12px; border-radius: 10px; }
   #connect { padding: 24px 0; }
   #connect[hidden] { display: none; }
   #connect p { color: var(--muted); }
@@ -123,6 +133,21 @@
 <div id="msg">Loading…</div>
 
 <div id="app" hidden>
+  <div class="card">
+    <h2>Ask Sky</h2>
+    <div class="chat" id="chat" hidden></div>
+    <div class="chips" id="askChips">
+      <button data-q="How much did I spend this week?">This week's spending</button>
+      <button data-q="What did I spend on food this month?">Food this month</button>
+      <button data-q="Review my categories for this month">Review my categories</button>
+    </div>
+    <form class="ask" id="askForm">
+      <input id="askText" type="text" autocomplete="off" enterkeyhint="send" aria-label="Ask Sky"
+             placeholder="Ask, or tell Sky what to fix">
+      <button class="primary" type="submit">Ask</button>
+    </form>
+  </div>
+
   <div class="card">
     <h2>Spent this month</h2>
     <div class="total" id="total"></div>
@@ -210,6 +235,7 @@ const ACTIONS = {
   addFromSms: text => ({ action: 'addSms', text }),
   addManual: entry => ({ action: 'addManual', entry }),
   setEmis: emis => ({ action: 'setEmis', emis }),
+  ask: text => ({ action: 'ask', text }),
 };
 function call(link, viewKey, body) {
   return fetch(link, {
@@ -494,6 +520,27 @@ $('list').addEventListener('change', e => {
   render();
   api('setCategory', row, cat).catch(err => alert('Could not save: ' + err.message));
 });
+// ----- Ask Sky (Assistant.gs) -----
+const chat = [];
+function renderChat() {
+  $('chat').innerHTML = chat.map(m => `<div class="bubble ${m.who}">${esc(m.text)}</div>`).join('');
+  $('chat').hidden = !chat.length;
+  $('chat').scrollTop = $('chat').scrollHeight;
+}
+function askSky(text) {
+  text = text.trim();
+  if (!text) return;
+  const reply = { who: 'sky', text: '…' };
+  chat.push({ who: 'me', text }, reply);
+  $('askText').value = ''; $('askChips').hidden = true;
+  renderChat();
+  api('ask', text)
+    .then(r => { reply.text = r; renderChat(); load(); })  // reload: Sky may have changed a category
+    .catch(e => { reply.text = 'Sorry, that didn\'t work: ' + e.message; renderChat(); });
+}
+$('askForm').onsubmit = e => { e.preventDefault(); askSky($('askText').value); };
+$('askChips').onclick = e => { if (e.target.dataset.q) askSky(e.target.dataset.q); };
+
 $('prev').onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1); render(); };
 $('next').onclick = () => { cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1); render(); };
 

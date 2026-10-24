@@ -1,7 +1,8 @@
 /**
  * Sky assistant — answers "Ask Sky" questions with Claude and the tools below.
  *
- * The Ask Sky shortcut posts {action: 'ask', viewKey, text} to doPost (see appRequest_ in Code.gs).
+ * The Ask Sky shortcut and the app's Ask Sky box post {action: 'ask', viewKey, text} to doPost
+ * (see appRequest_ in Code.gs); the dashboard calls ask() directly.
  * Claude decides which tool to call; the tools run here, on your own sheet. The reply is short
  * plain text, because the shortcut speaks it aloud.
  *
@@ -107,6 +108,12 @@ const ASK_TOOLS = [
 ];
 
 // ---------- the conversation ----------
+
+/** Called from the dashboard's Ask Sky box. */
+function ask(text) {
+  if (!isOwner_()) throw new Error('Not allowed');
+  return ask_(text);
+}
 
 /** Answers one question. Returns the text to speak. */
 function ask_(text) {

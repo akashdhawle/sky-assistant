@@ -64,6 +64,7 @@ const ACTIONS = {
   addFromSms: text => ({ action: 'addSms', text }),
   addManual: entry => ({ action: 'addManual', entry }),
   setEmis: emis => ({ action: 'setEmis', emis }),
+  ask: text => ({ action: 'ask', text }),
 };
 function call(link, viewKey, body) {
   return fetch(link, {
