@@ -1,0 +1,64 @@
+# Copies apps-script/ into your Apps Script project and deploys a new version of your
+# existing web app deployment, so its link (and your shortcuts and app) stay the same.
+# One-time setup: SETUP.md, "Automatic deploys". Until the three secrets exist, this does nothing.
+name: Deploy to Apps Script
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps-script/**', '.github/workflows/deploy-apps-script.yml']
+  workflow_dispatch:
+
+concurrency: deploy-apps-script
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+      SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
+      DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
+      CLASP: npx -y @google/clasp@2.4.2
+    steps:
+      - name: Check setup
+        id: check
+        run: |
+          if [ -z "$CLASPRC_JSON" ] || [ -z "$SCRIPT_ID" ] || [ -z "$DEPLOYMENT_ID" ]; then
+            echo "::notice::Automatic deploy isn't set up yet (see SETUP.md, Automatic deploys). Skipping."
+            echo "ready=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=yes" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.ready == 'yes'
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.ready == 'yes'
+        with:
+          node-version: 20
+
+      - name: Pull the current project
+        if: steps.check.outputs.ready == 'yes'
+        run: |
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+          mkdir -p "$RUNNER_TEMP/gas" && cd "$RUNNER_TEMP/gas"
+          printf '{"scriptId":"%s","fileExtension":"gs"}' "$SCRIPT_ID" > .clasp.json
+          # Pulling first keeps the project's own manifest (time zone, web app settings) and any
+          # files that aren't in this repository.
+          $CLASP pull
+          grep -q '"webapp"' appsscript.json || echo "::warning::appsscript.json has no webapp section; is SCRIPT_ID the right project?"
+          ls -la
+
+      - name: Push the code and deploy a new version
+        if: steps.check.outputs.ready == 'yes'
+        run: |
+          cd "$RUNNER_TEMP/gas"
+          cp "$GITHUB_WORKSPACE"/apps-script/*.gs "$GITHUB_WORKSPACE"/apps-script/*.html .
+          $CLASP push --force
+          $CLASP deploy --deploymentId "$DEPLOYMENT_ID" --description "GitHub ${GITHUB_SHA::7}"
+          echo "Deployed ${GITHUB_SHA::7} to the existing web app link."
+
+      - name: Forget the login
+        if: always()
+        run: rm -f ~/.clasprc.json

@@ -260,3 +260,43 @@ Tap **Lists** at the top. Each tab (Books, Movies, Places, Quotes, Journal) has 
 - Statuses: books are *To read*, *Reading* or *Read*; movies *To watch* or *Watched*; places *Want to go* or *Visited*. Ratings are out of 5.
 - "Remove" doesn't delete a row; it sets the status to *Removed*, so nothing is lost. Delete the row in the sheet if you want it gone.
 - Your journal goes to the AI when you save or read it. On Gemini's free tier, Google may use it to improve its products; switch to Claude (see Update 6) if you'd rather it stayed private.
+
+## Automatic deploys (optional, about 15 minutes once)
+
+After this, you never paste code into Apps Script again. Whenever a change to `apps-script/` is merged on GitHub, GitHub copies the files into your Apps Script project and deploys a **new version of your existing deployment**, so your link, shortcuts and app keep working. It takes about a minute after the merge.
+
+You need a computer for the one-time setup.
+
+### 1. Allow tools to update your scripts
+Open **script.google.com/home/usersettings** and turn **Google Apps Script API** on.
+
+### 2. Sign in once with clasp (Google's Apps Script tool)
+1. If you don't have Node.js, install the **LTS** version from **nodejs.org** (Next, Next, Finish).
+2. Open **Command Prompt** (Windows) or **Terminal** (Mac) and run:
+   ```
+   npx @google/clasp@2.4.2 login
+   ```
+   Type `y` if it asks to install. A browser opens: sign in with the Google account that owns your sheet and click **Allow**. You'll see "Logged in".
+3. Open the login file it saved:
+   - Windows: `notepad %USERPROFILE%\.clasprc.json`
+   - Mac: `open -e ~/.clasprc.json`
+
+   Select everything and copy it.
+
+### 3. Give GitHub three secrets
+In your repository on GitHub: **Settings → Secrets and variables → Actions → New repository secret**. Add these three:
+
+| Name | Value |
+|---|---|
+| `CLASPRC_JSON` | everything you copied from `.clasprc.json` |
+| `SCRIPT_ID` | Apps Script → **⚙ Project Settings** → **IDs** → **Script ID** |
+| `DEPLOYMENT_ID` | the part of your receive link between `/s/` and `/exec` (it starts with `AKfycb`) |
+
+### 4. Try it
+On GitHub, open **Actions → Deploy to Apps Script → Run workflow**. A green tick means it worked; Apps Script's **Manage deployments** shows a new version described "GitHub …". A red cross shows the reason when you open it; send it to Sky's builder.
+
+### Good to know
+- Your settings (Script properties such as `GEMINI_API_KEY`) and any extra files you made in Apps Script are kept; only `Code`, `Dashboard` and `Assistant` are replaced.
+- GitHub stores the secrets encrypted, never prints them, and doesn't give them to other people's pull requests. The login only lets GitHub edit and deploy your Apps Script projects.
+- To turn it off, delete the `CLASPRC_JSON` secret. To cut off the login entirely, remove **clasp** at **myaccount.google.com/permissions**.
+- If Google asks for a new permission after an update (rare, when Sky starts using a new Google service), open Apps Script once and run any function to approve it.
