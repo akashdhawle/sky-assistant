@@ -241,7 +241,8 @@ function callGemini_(apiKey, model, contents) {
   const data = JSON.parse(resp.getContentText() || '{}');
   if (code !== 200) {
     const msg = (data.error && data.error.message) || ('HTTP ' + code);
-    if (code === 429) throw new Error('Gemini\'s free daily limit is used up. Try again later');
+    // Google's message names the limit that was hit (per minute or per day) and when to retry.
+    if (code === 429) throw new Error('Gemini limit reached: ' + msg.split('\n')[0].slice(0, 300));
     throw new Error(/API key/i.test(msg) ? 'Gemini API key was rejected' : 'Gemini: ' + msg);
   }
   const cand = (data.candidates || [])[0];
