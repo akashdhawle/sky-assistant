@@ -13,7 +13,7 @@ Bank SMS ──▶ iPhone Shortcuts automation ──▶ your Google Apps Script
 ```
 
 - `docs/` holds the installable app (GitHub Pages serves this folder).
-- `apps-script/Code.gs` and `apps-script/Dashboard.html` go into each person's own Google Sheet.
+- `apps-script/Code.gs`, `apps-script/Assistant.gs` (the Ask Sky voice assistant) and `apps-script/Dashboard.html` go into each person's own Google Sheet.
 - `build_app.py` rebuilds `docs/index.html` from `apps-script/Dashboard.html`.
 
 ## What's next

@@ -7,7 +7,8 @@
  *         can arrive at once (the shortcut's queue for when the network was down).
  *         Replies with a `notify` text the shortcut shows as a notification.
  *         With an `action` and the view key, it also answers the Expenses app
- *         (docs/index.html) and the daily or weekly summary shortcut.
+ *         (docs/index.html), the daily or weekly summary shortcut, and the
+ *         Ask Sky shortcut (Assistant.gs).
  * doGet:  serves the chart dashboard, only to the owner of this script.
  *
  * One-time: run setup() from the editor, then deploy twice (see SETUP.md).
@@ -379,6 +380,10 @@ function appRequest_(body) {
       case 'addSms': return { ok: true, result: addFromSms_(body.text) };
       case 'addManual': return { ok: true, result: addManual_(body.entry || {}) };
       case 'setEmis': return { ok: true, result: setEmis_(body.emis) };
+      case 'ask': {
+        const text = ask_(body.text);
+        return { ok: true, result: text, notify: text };
+      }
       case 'summary': {
         const text = summary_(body.period === 'week' ? 'week' : 'day', new Date());
         return { ok: true, result: text, notify: text };
@@ -551,7 +556,7 @@ function setCategory(row, category) {
   return setCategory_(row, category);
 }
 
-function setCategory_(row, category) {
+function setCategory_(row, category, learn) {
   row = Number(row);
   if (!(row >= 2)) throw new Error('Bad row');
   if (CATEGORIES.indexOf(category) === -1 && INCOME_CATEGORIES.indexOf(category) === -1) {
@@ -561,7 +566,7 @@ function setCategory_(row, category) {
   const sheet = ss.getSheetByName(SHEET_TX);
   sheet.getRange(row, 5).setValue(category);
   const merchant = String(sheet.getRange(row, 4).getValue()).toLowerCase().trim();
-  if (merchant && merchant !== 'unknown' && CATEGORIES.indexOf(category) !== -1) {
+  if (learn !== false && merchant && merchant !== 'unknown' && CATEGORIES.indexOf(category) !== -1) {
     const rules = ss.getSheetByName(SHEET_RULES);
     const existing = rules.getLastRow() < 2 ? [] :
       rules.getRange(2, 1, rules.getLastRow() - 1, 1).getValues().flat().map(String);

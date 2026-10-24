@@ -185,3 +185,40 @@ Open **Expenses**, find the **EMIs** card, tap **Edit**, and add each loan with 
 - The EMIs card shows each loan as **Paid**, **Due** or **Not seen**. A payment is matched to a loan when the amount is within 2%. If two loans have the same amount, put a word from the bank message (for example `bajaj`) in the **Match word** column of the EMIs tab.
 - The 9 PM **Spending Summary** (Update 4) reminds you the evening before an EMI is due, and tells you if one hasn't shown up after its date.
 - An SIP or insurance auto-debit can also land in EMI. Change its category in the transaction list and the app remembers it for next time.
+
+---
+
+## Update 6: Ask Sky, the voice assistant (about 15 minutes)
+
+Ask about your spending out loud, and fix categories by voice: "Hey Siri, Ask Sky… how much did I spend on food this month?" or "the Swiggy one on 21 October was a gift". Sky uses Claude to understand you and answers through Siri.
+
+### A Claude API key (once)
+1. Go to **console.anthropic.com**, sign in, and open **Billing**. Add a small amount of credit, for example $5.
+2. On the Console's limits page, set a monthly spend limit, for example $10. Sky stops answering if it's reached and never charges more.
+3. Open **API keys → Create key**, name it `Sky`, and copy the key. You only see it once.
+
+Each question costs well under ₹1: everyday questions use Claude Haiku, and only "review my categories" uses the stronger Claude Sonnet.
+
+### On your computer
+1. In Apps Script, clear `Code.gs` and `Dashboard` and paste the new ones, as before. Then click **+ → Script**, name it `Assistant`, and paste `apps-script/Assistant.gs` into it. Press **Ctrl+S**.
+2. **⚙ Project Settings → Script properties → Add script property**: name `CLAUDE_API_KEY`, value your key. **Save**. The key stays in your script and is never in the app, the shortcut or GitHub.
+3. **Deploy → Manage deployments**, pick the deployment your shortcut and app use, ✏️ → **New version** → **Deploy**. Approve the new permission if Google asks: the script now connects to Claude's servers.
+
+### On your iPhone: the Ask Sky shortcut
+1. **Shortcuts tab → +**, name it **Ask Sky**. Siri will run it when you say "Hey Siri, Ask Sky".
+2. **Dictate Text**. Set *Stop Listening* to **After Pause**.
+3. **Get contents of URL**: your receive link, **Method POST**, **Request Body JSON** with three Text fields: `viewKey` → your View key, `action` → `ask`, `text` → **Dictated Text**.
+4. **Get Dictionary Value**: *Value* for `notify` in **Contents of URL**.
+5. **Speak Text**: **Dictionary Value**. Add **Show Result** with **Dictionary Value** too if you'd like to see it on screen.
+
+### In the app
+After you paste the new `Dashboard` too and deploy, the **Ask Sky** box sits at the top of the Expenses app. Type a question, or tap the microphone on your keyboard to speak it. It's the same assistant as the shortcut, so it works on Android phones as well. If you use the installed app, open it once after deploying so it picks up the new version.
+
+Try: "How much did I spend this week?", "What did I pay Amazon this month?", "The Swiggy one on 21 October was a gift", "Check my categories for this month", "Undo that".
+
+### How it works
+- Sky only reads your sheet through a few actions: spending totals, searching transactions, changing a category, reviewing categories, and undo. It can't add, delete or edit amounts.
+- Every category change is logged in a new **ChangeLog** tab with the old and new category, so "undo that" (or you, in the sheet) can put it back. Sky changes at most 3 transactions at a time without asking you first.
+- A follow-up within 30 minutes continues the same conversation, so "move it to Gifts" knows what "it" is.
+- To change the models, add the script properties `CLAUDE_MODEL` (everyday, default `claude-haiku-5-5`) or `CLAUDE_REVIEW_MODEL` (reviews, default `claude-sonnet-5-5`).
+- When you ask, Sky sends Claude your question and the transactions it looks up (date, merchant, amount, category). Anthropic doesn't use API data to train its models by default.
