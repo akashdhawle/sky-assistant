@@ -307,6 +307,7 @@ For a back-and-forth conversation without building a longer shortcut: open the a
 
 - The first time, allow the microphone when the phone asks. If you said no by mistake: iPhone **Settings → Safari → Microphone** (or **Settings → Apps → Safari**), then reopen the app.
 - Use the speaker, or the answer may be picked up as your next question. Headphones work best.
+- **A more natural voice:** Sky picks the best voice your phone has. Under the Ask box, use **Voice** to try others; your choice is remembered. On iPhone, the free downloadable voices sound much more natural: go to **Settings → Accessibility → Spoken Content → Voices → English**, download an **Enhanced** or **Premium** voice (for example Isha or Rishi under India), then reopen the app and pick it. Android's Google voices already sound natural.
 - The 🎤 only shows on phones and browsers that support speech recognition. It uses the phone's own speech features, so it costs nothing extra.
 
 ## Your name
