@@ -235,3 +235,25 @@ Claude keeps your data private (Anthropic doesn't train on API data by default) 
 3. In **Script properties**, add `CLAUDE_API_KEY` with your key, and add `AI_PROVIDER` with the value `claude`. No new deployment is needed. To go back to Gemini, delete `AI_PROVIDER`.
 
 To change models, add the script properties `GEMINI_MODEL` (default `gemini-3.5-flash-lite`), `CLAUDE_MODEL` (everyday, default `claude-haiku-5-5`) or `CLAUDE_REVIEW_MODEL` (reviews, default `claude-sonnet-5-5`).
+
+## Update 7: Lists, quotes and journal (about 5 minutes)
+
+Sky now keeps your reading list, watchlist, places to visit, favourite quotes and a journal, all by voice or in the Ask Sky box.
+
+### On your computer
+1. In Apps Script, clear `Assistant` and paste the new `apps-script/Assistant.gs`. Press **Ctrl+S**.
+2. **Deploy → Manage deployments**, ✏️ → **New version** → **Deploy**.
+
+Nothing changes on your iPhone: the same Ask Sky shortcut and app box handle it all. Sky creates the **Books**, **Movies**, **Places**, **Quotes** and **Journal** tabs the first time you use each one, and you can edit them in the sheet any time.
+
+### Try
+- "Add Atomic Habits to my TBR", "What's on my reading list?", "I finished Deep Work, 4 stars", "What should I read next?"
+- "Add Dune to my watchlist", "I watched Dune", "Remove Tenet from my watchlist"
+- "Add Hampi to places to visit", "Which places haven't I been to yet?"
+- "Save this quote: You do not rise to the level of your goals, from Atomic Habits", "Read me a quote", "A quote from Deep Work"
+- "Journal: long walk by the sea today, felt calm", "What did I write in my journal last week?"
+
+### Good to know
+- Statuses: books are *To read*, *Reading* or *Read*; movies *To watch* or *Watched*; places *Want to go* or *Visited*. Ratings are out of 5.
+- "Remove" doesn't delete a row; it sets the status to *Removed*, so nothing is lost. Delete the row in the sheet if you want it gone.
+- Your journal goes to the AI when you save or read it. On Gemini's free tier, Google may use it to improve its products; switch to Claude (see Update 6) if you'd rather it stayed private.
