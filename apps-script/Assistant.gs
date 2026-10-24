@@ -9,14 +9,14 @@
  * Two providers work: Google Gemini (free tier) and Claude. In Apps Script, Project Settings →
  * Script properties, add GEMINI_API_KEY or CLAUDE_API_KEY. With both, Gemini is used unless
  * AI_PROVIDER is set to claude.
- * Optional properties: GEMINI_MODEL (default Gemini Flash), CLAUDE_MODEL (everyday questions,
+ * Optional properties: GEMINI_MODEL (default Gemini Flash-Lite), CLAUDE_MODEL (everyday questions,
  * default Haiku) and CLAUDE_REVIEW_MODEL (when you ask Sky to review your categories, default Sonnet).
  */
 
 const SHEET_CHANGES = 'ChangeLog';
 const CLAUDE_URL = 'https://api.anthropic.com/v1/messages';
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
-const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';  // new free accounts get little or no free use of the bigger Flash
 const DEFAULT_MODEL = 'claude-haiku-5-5';
 const DEFAULT_REVIEW_MODEL = 'claude-sonnet-5-5';
 const MAX_TOOL_ROUNDS = 6;

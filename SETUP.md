@@ -212,6 +212,11 @@ On the free tier, Google may use what Sky sends (your question and the transacti
 4. **Get Dictionary Value**: *Value* for `notify` in **Contents of URL**.
 5. **Speak Text**: **Dictionary Value**. Add **Show Result** with **Dictionary Value** too if you'd like to see it on screen.
 
+If it doesn't work:
+- **Sky answers about "Dictated Text":** the `text` field holds the typed words instead of the variable. Clear it and tap **Dictated Text** in the bar above the keyboard, so it shows as a blue bubble.
+- **"Cannot process dictated text":** replace **Dictate Text** with **Ask for Input** (Input: Text), and set `text` to **Provided Input**.
+- **It answers but doesn't speak:** in **Settings → Siri → Siri Responses**, choose **Automatic** or **Prefer Spoken Responses** instead of Prefer Silent Responses. Check the silent switch and volume too.
+
 ### In the app
 After you paste the new `Dashboard` too and deploy, the **Ask Sky** box sits at the top of the Expenses app. Type a question, or tap the microphone on your keyboard to speak it. It's the same assistant as the shortcut, so it works on Android phones as well. If you use the installed app, open it once after deploying so it picks up the new version.
 
@@ -229,4 +234,4 @@ Claude keeps your data private (Anthropic doesn't train on API data by default) 
 2. Open **API keys → Create key**, name it `Sky`, and copy it.
 3. In **Script properties**, add `CLAUDE_API_KEY` with your key, and add `AI_PROVIDER` with the value `claude`. No new deployment is needed. To go back to Gemini, delete `AI_PROVIDER`.
 
-To change models, add the script properties `GEMINI_MODEL` (default `gemini-3.8-flash`), `CLAUDE_MODEL` (everyday, default `claude-haiku-5-5`) or `CLAUDE_REVIEW_MODEL` (reviews, default `claude-sonnet-5-5`).
+To change models, add the script properties `GEMINI_MODEL` (default `gemini-3.5-flash-lite`), `CLAUDE_MODEL` (everyday, default `claude-haiku-5-5`) or `CLAUDE_REVIEW_MODEL` (reviews, default `claude-sonnet-5-5`).
