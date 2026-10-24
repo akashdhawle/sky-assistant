@@ -542,6 +542,7 @@ function getData_() {
   const last = sheet.getLastRow();
   const rows = last < 2 ? [] : sheet.getRange(2, 1, last - 1, 9).getValues();
   return {
+    ownerName: ownerName_(),
     categories: CATEGORIES,
     incomeCategories: INCOME_CATEGORIES,
     budgets: getBudgets_(),
@@ -639,6 +640,11 @@ function addManual_(entry) {
 // ---------- helpers ----------
 
 /** Opens the sheet by its saved ID, which works for requests from the phone too. */
+/** The owner's first name (script property OWNER_NAME), for greetings. Empty if not set. */
+function ownerName_() {
+  return String(PropertiesService.getScriptProperties().getProperty('OWNER_NAME') || '').trim();
+}
+
 function ss_() {
   const id = PropertiesService.getScriptProperties().getProperty('SHEET_ID');
   return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActive();
