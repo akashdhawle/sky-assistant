@@ -1,6 +1,6 @@
-# Sky's Expenses
+# Sky
 
-A personal expense tracker for iPhone. It reads bank SMS from SBI, ICICI, HDFC, Axis and Kotak (accounts and credit cards) through an iOS Shortcuts automation and shows spending, income, budgets and charts in an app you add to your Home Screen.
+Sky is a personal assistant for iPhone, built without a Mac or the App Store. Its first part, **Sky's Expenses**, is a personal expense tracker. It reads bank SMS from SBI, ICICI, HDFC, Axis and Kotak (accounts and credit cards) through an iOS Shortcuts automation and shows spending, income, budgets and charts in an app you add to your Home Screen.
 
 Every person who uses it keeps their data in **their own Google Sheet**. This repository holds only code: no data, no keys and no links to anyone's sheet.
 
@@ -15,6 +15,10 @@ Bank SMS ──▶ iPhone Shortcuts automation ──▶ your Google Apps Script
 - `docs/` holds the installable app (GitHub Pages serves this folder).
 - `apps-script/Code.gs` and `apps-script/Dashboard.html` go into each person's own Google Sheet.
 - `build_app.py` rebuilds `docs/index.html` from `apps-script/Dashboard.html`.
+
+## What's next
+
+Sky is growing from an expense tracker into a voice assistant ("Hey Siri, Ask Sky"). The same Google Sheet and Apps Script will power a daily news brief, a TBR book list and movie watchlist, saved quotes, places to visit, a journal, fitness from Apple Health, birthday reminders in Google Calendar, and a Google Drive folder for bills and receipts. The expense tracker below keeps working as it does today.
 
 ## Set it up for yourself (about 15 minutes)
 

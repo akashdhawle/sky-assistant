@@ -1,5 +1,5 @@
 /**
- * Sky's Expense Tracker — Google Apps Script backend.
+ * Sky — Google Apps Script backend (expense tracker; the assistant builds on it).
  *
  * doPost: receives bank SMS from the iPhone Shortcuts automation, checks the
  *         secret key, parses each message, and appends one row per transaction.
